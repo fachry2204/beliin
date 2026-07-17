@@ -59,14 +59,20 @@ const startCamera = async () => {
     }
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: facingMode.value },
-                width: { ideal: 1080 },
-                height: { ideal: 1920 },
-                aspectRatio: { ideal: 0.75 },
-            },
+            video: { facingMode: { ideal: facingMode.value } },
             audio: false,
         });
+        const videoTrack = cameraStream.getVideoTracks()[0];
+        try {
+            const capabilities = videoTrack?.getCapabilities() as MediaTrackCapabilities & { zoom?: { min?: number } };
+            if (videoTrack && capabilities?.zoom?.min !== undefined) {
+                await videoTrack.applyConstraints({
+                    advanced: [{ zoom: capabilities.zoom.min } as unknown as MediaTrackConstraintSet],
+                });
+            }
+        } catch {
+            // Perangkat lama tetap menggunakan zoom bawaan kamera tanpa menggagalkan preview.
+        }
         await nextTick();
         if (video.value) {
             video.value.srcObject = cameraStream;
@@ -126,25 +132,19 @@ const stampPhoto = async (address: string): Promise<File> => {
     canvas.width = 1080;
     canvas.height = 1440;
     const context = canvas.getContext("2d")!;
-    const sourceRatio = video.value.videoWidth / video.value.videoHeight;
-    const targetRatio = canvas.width / canvas.height;
-    let sourceX = 0;
-    let sourceY = 0;
-    let sourceWidth = video.value.videoWidth;
-    let sourceHeight = video.value.videoHeight;
-    if (sourceRatio > targetRatio) {
-        sourceWidth = video.value.videoHeight * targetRatio;
-        sourceX = (video.value.videoWidth - sourceWidth) / 2;
-    } else {
-        sourceHeight = video.value.videoWidth / targetRatio;
-        sourceY = (video.value.videoHeight - sourceHeight) / 2;
-    }
+    const scale = Math.min(canvas.width / video.value.videoWidth, canvas.height / video.value.videoHeight);
+    const renderedWidth = video.value.videoWidth * scale;
+    const renderedHeight = video.value.videoHeight * scale;
+    const renderedX = (canvas.width - renderedWidth) / 2;
+    const renderedY = (canvas.height - renderedHeight) / 2;
+    context.fillStyle = "black";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.save();
     if (facingMode.value === "user") {
         context.translate(canvas.width, 0);
         context.scale(-1, 1);
     }
-    context.drawImage(video.value, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+    context.drawImage(video.value, renderedX, renderedY, renderedWidth, renderedHeight);
     context.restore();
     const fontSize = Math.max(22, Math.round(canvas.width * 0.026));
     context.font = `600 ${fontSize}px sans-serif`;
@@ -281,7 +281,7 @@ onMounted(startCourierLocationTracking);
                 </div>
 
                 <div class="flex min-h-0 flex-1 items-center justify-center bg-black">
-                    <video :ref="setVideoRef" autoplay muted playsinline class="h-full w-full object-cover sm:aspect-[3/4] sm:h-[min(100vh,900px)] sm:w-auto" :class="facingMode === 'user' ? '-scale-x-100' : ''"></video>
+                    <video :ref="setVideoRef" autoplay muted playsinline class="h-full w-full bg-black object-contain sm:aspect-[3/4] sm:h-[min(100dvh,900px)] sm:w-auto" :class="facingMode === 'user' ? '-scale-x-100' : ''"></video>
                 </div>
 
                 <div class="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black via-black/85 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-16">

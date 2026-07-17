@@ -6,7 +6,7 @@
             $appIcon = data_get($page, 'props.company.favicon_url') ?: data_get($page, 'props.company.logo_url') ?: asset('favicon.ico');
         @endphp
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <meta name="theme-color" content="#0ea5e9">
         <meta name="application-name" content="{{ $companyName }}">
         <meta name="mobile-web-app-capable" content="yes">
