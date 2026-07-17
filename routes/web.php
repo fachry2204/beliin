@@ -106,6 +106,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('tasks/{delivery}/start', [CourierPortalController::class, 'start'])->name('tasks.start');
         Route::post('tasks/{delivery}/complete', [CourierPortalController::class, 'complete'])->name('tasks.complete');
         Route::post('location', [CourierPortalController::class, 'location'])->name('location.store');
+        Route::get('location/address', [CourierPortalController::class, 'address'])->name('location.address');
         Route::get('earnings', [CourierPortalController::class, 'earnings'])->name('earnings.index');
         Route::get('profile', [CourierPortalController::class, 'profile'])->name('profile.edit');
         Route::patch('profile', [CourierPortalController::class, 'updateProfile'])->name('profile.update');

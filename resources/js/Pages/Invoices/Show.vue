@@ -38,6 +38,12 @@ interface Delivery {
     proof_taken_at?: string;
     proof_url?: string;
     delivery_address?: string;
+    departure_photo_taken_at?: string;
+    departure_proof_url?: string;
+    departure_address?: string;
+    departed_latitude?: string;
+    departed_longitude?: string;
+    departed_accuracy?: string;
     delivered_latitude?: string;
     delivered_longitude?: string;
     delivered_accuracy?: string;
@@ -584,6 +590,20 @@ const remove = () =>
             @close="deliveryDetailOpen = false"
         >
             <div v-if="invoice.delivery" class="space-y-4">
+                <section v-if="invoice.delivery.departure_proof_url" class="space-y-3">
+                    <h3 class="font-bold text-slate-800">Bukti Sebelum Mengantar</h3>
+                    <img
+                        :src="invoice.delivery.departure_proof_url"
+                        alt="Bukti kurir sebelum mulai mengantar"
+                        class="max-h-[60vh] w-full rounded-xl border border-slate-200 bg-slate-100 object-contain"
+                    />
+                    <dl class="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
+                        <div class="sm:col-span-2"><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Alamat Keberangkatan</dt><dd class="mt-1 font-medium text-slate-800">{{ invoice.delivery.departure_address || '-' }}</dd></div>
+                        <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tanggal dan Waktu</dt><dd class="mt-1 font-medium text-slate-800">{{ formatDeliveryTime(invoice.delivery.departure_photo_taken_at || invoice.delivery.departed_at) }}</dd></div>
+                        <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Koordinat GPS</dt><dd class="mt-1 font-medium text-slate-800">{{ invoice.delivery.departed_latitude || '-' }}, {{ invoice.delivery.departed_longitude || '-' }}<span v-if="invoice.delivery.departed_accuracy" class="block text-xs text-slate-500">Akurasi ±{{ Math.round(Number(invoice.delivery.departed_accuracy)) }} meter</span></dd></div>
+                    </dl>
+                </section>
+                <h3 v-if="invoice.delivery.departure_proof_url" class="border-t border-slate-200 pt-4 font-bold text-slate-800">Bukti Sampai di Lokasi</h3>
                 <img
                     v-if="invoice.delivery.proof_url"
                     :src="invoice.delivery.proof_url"

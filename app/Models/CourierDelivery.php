@@ -20,15 +20,20 @@ class CourierDelivery extends Model
         'invoice_id', 'courier_id', 'status', 'accepted_at', 'departed_at', 'delivered_at',
         'accepted_latitude', 'accepted_longitude', 'delivered_latitude', 'delivered_longitude',
         'delivered_accuracy', 'delivery_address', 'proof_photo_path', 'proof_taken_at', 'delivery_notes',
+        'departed_latitude', 'departed_longitude', 'departed_accuracy', 'departure_address',
+        'departure_photo_path', 'departure_photo_taken_at',
     ];
 
     protected function casts(): array
     {
         return [
             'accepted_at' => 'datetime', 'departed_at' => 'datetime', 'delivered_at' => 'datetime',
-            'proof_taken_at' => 'datetime', 'accepted_latitude' => 'decimal:7',
+            'proof_taken_at' => 'datetime', 'departure_photo_taken_at' => 'datetime',
+            'accepted_latitude' => 'decimal:7',
             'accepted_longitude' => 'decimal:7', 'delivered_latitude' => 'decimal:7',
             'delivered_longitude' => 'decimal:7', 'delivered_accuracy' => 'decimal:2',
+            'departed_latitude' => 'decimal:7', 'departed_longitude' => 'decimal:7',
+            'departed_accuracy' => 'decimal:2',
         ];
     }
 

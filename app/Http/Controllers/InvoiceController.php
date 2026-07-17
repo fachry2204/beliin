@@ -103,6 +103,9 @@ class InvoiceController extends Controller
         if ($invoice->delivery?->proof_photo_path) {
             $invoice->delivery->proof_url = '/storage/'.ltrim($invoice->delivery->proof_photo_path, '/');
         }
+        if ($invoice->delivery?->departure_photo_path) {
+            $invoice->delivery->departure_proof_url = '/storage/'.ltrim($invoice->delivery->departure_photo_path, '/');
+        }
         if (! $request->user()->can('profit.view')) {
             $invoice->makeHidden(['total_cost', 'gross_profit']);
         } else {

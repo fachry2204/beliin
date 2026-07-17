@@ -106,8 +106,18 @@ class CourierPortalTest extends TestCase
         $this->actingAs($this->courierUser)->post(route('courier.location.store'), ['latitude' => -6.2, 'longitude' => 106.8166, 'accuracy' => 8])->assertOk();
         $this->actingAs($this->courierUser)->post(route('courier.tasks.accept', $delivery), ['latitude' => -6.2, 'longitude' => 106.8166])->assertRedirect();
         $this->assertSame(CourierDelivery::ACCEPTED, $delivery->fresh()->status);
-        $this->actingAs($this->courierUser)->post(route('courier.tasks.start', $delivery))->assertRedirect();
-        $this->assertSame(CourierDelivery::IN_TRANSIT, $delivery->fresh()->status);
+        $this->actingAs($this->courierUser)->post(route('courier.tasks.start', $delivery), [
+            'latitude' => -6.205,
+            'longitude' => 106.818,
+            'accuracy' => 6,
+            'departure_address' => 'Gudang Jakarta, Indonesia',
+            'departure_photo' => UploadedFile::fake()->image('berangkat.jpg', 800, 1200),
+        ])->assertRedirect();
+        $delivery = $delivery->fresh();
+        $this->assertSame(CourierDelivery::IN_TRANSIT, $delivery->status);
+        $this->assertNotNull($delivery->departure_photo_taken_at);
+        $this->assertSame('Gudang Jakarta, Indonesia', $delivery->departure_address);
+        Storage::disk('public')->assertExists($delivery->departure_photo_path);
 
         $this->actingAs($this->courierUser)->post(route('courier.tasks.complete', $delivery), [
             'latitude' => -6.21,
@@ -132,6 +142,8 @@ class CourierPortalTest extends TestCase
                 ->where('invoice.delivery.status', CourierDelivery::DELIVERED)
                 ->where('invoice.delivery.accepted_at', fn ($value) => filled($value))
                 ->where('invoice.delivery.departed_at', fn ($value) => filled($value))
+                ->where('invoice.delivery.departure_address', 'Gudang Jakarta, Indonesia')
+                ->where('invoice.delivery.departure_proof_url', fn ($value) => filled($value))
                 ->where('invoice.delivery.delivered_at', fn ($value) => filled($value))
                 ->where('invoice.delivery.delivery_address', 'Jl. Sudirman No. 1, Jakarta, Indonesia')
                 ->where('invoice.delivery.proof_url', fn ($value) => filled($value))

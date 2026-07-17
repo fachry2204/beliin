@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted } from "vue";
 import { Link, router, usePage } from "@inertiajs/vue3";
-import axios from "axios";
+import { startCourierLocationTracking, stopCourierLocationTracking, useCourierLocation } from "@/composables/useCourierLocation";
 
 interface PageProps extends Record<string, unknown> {
     auth: { user: { id: number; name: string; email: string } };
@@ -10,31 +10,9 @@ interface PageProps extends Record<string, unknown> {
 }
 const page = usePage<PageProps>();
 const flash = computed(() => page.props.flash);
-const locationState = ref("Mencari GPS...");
-let watchId: number | null = null;
-let lastSent = 0;
-
-const sendLocation = async (position: GeolocationPosition) => {
-    locationState.value = "GPS aktif";
-    if (Date.now() - lastSent < 25000) return;
-    lastSent = Date.now();
-    await axios.post(route("courier.location.store"), {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-    });
-};
-
-onMounted(() => {
-    if (!navigator.geolocation) {
-        locationState.value = "GPS tidak tersedia";
-        return;
-    }
-    watchId = navigator.geolocation.watchPosition(sendLocation, () => {
-        locationState.value = "Izin GPS diperlukan";
-    }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
-});
-onBeforeUnmount(() => watchId !== null && navigator.geolocation.clearWatch(watchId));
+const { status: locationState } = useCourierLocation();
+onMounted(startCourierLocationTracking);
+onBeforeUnmount(stopCourierLocationTracking);
 const logout = () => router.post(route("logout"));
 </script>
 

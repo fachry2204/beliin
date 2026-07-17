@@ -10,6 +10,8 @@ use App\Models\Invoice;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -102,7 +104,26 @@ class CourierPortalController extends Controller
     {
         $courier = $this->courier($request);
         $this->guardDelivery($delivery, $courier, [CourierDelivery::ACCEPTED]);
-        $delivery->update(['status' => CourierDelivery::IN_TRANSIT, 'departed_at' => now()]);
+        $data = $request->validate([
+            'latitude' => ['required', 'numeric', 'between:-90,90'],
+            'longitude' => ['required', 'numeric', 'between:-180,180'],
+            'accuracy' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            'departure_address' => ['required', 'string', 'max:2000'],
+            'departure_photo' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:8192'],
+        ]);
+        $path = $request->file('departure_photo')->store("courier-proofs/{$courier->id}", 'public');
+
+        $delivery->update([
+            'status' => CourierDelivery::IN_TRANSIT,
+            'departed_at' => now(),
+            'departed_latitude' => $data['latitude'],
+            'departed_longitude' => $data['longitude'],
+            'departed_accuracy' => $data['accuracy'] ?? null,
+            'departure_address' => $data['departure_address'],
+            'departure_photo_path' => $path,
+            'departure_photo_taken_at' => now(),
+        ]);
+        $this->saveLocation($courier, $data);
         $this->audit->record('start', 'courier_delivery', $delivery);
 
         return back()->with('success', 'Status diperbarui: Dalam Perjalanan.');
@@ -150,6 +171,35 @@ class CourierPortalController extends Controller
         $this->saveLocation($courier, $data);
 
         return response()->json(['saved' => true, 'recorded_at' => now()->toIso8601String()]);
+    }
+
+    public function address(Request $request)
+    {
+        $this->courier($request);
+        $data = $request->validate([
+            'latitude' => ['required', 'numeric', 'between:-90,90'],
+            'longitude' => ['required', 'numeric', 'between:-180,180'],
+        ]);
+        $cacheKey = sprintf('courier-address:%0.4f:%0.4f', $data['latitude'], $data['longitude']);
+        $address = Cache::remember($cacheKey, now()->addDay(), function () use ($data) {
+            $response = Http::acceptJson()
+                ->withHeaders(['User-Agent' => config('app.name').' Courier/1.0 ('.config('app.url').')'])
+                ->timeout(10)
+                ->get('https://nominatim.openstreetmap.org/reverse', [
+                    'format' => 'jsonv2',
+                    'lat' => $data['latitude'],
+                    'lon' => $data['longitude'],
+                    'zoom' => 18,
+                    'addressdetails' => 1,
+                    'accept-language' => 'id',
+                ]);
+
+            abort_unless($response->successful() && filled($response->json('display_name')), 503, 'Alamat GPS belum dapat ditemukan.');
+
+            return $response->json('display_name');
+        });
+
+        return response()->json(['address' => $address]);
     }
 
     private function courier(Request $request): Courier
