@@ -1,0 +1,347 @@
+<script setup lang="ts">
+import { computed, ref, watch } from "vue";
+import { Head, Link, useForm } from "@inertiajs/vue3";
+import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
+import AppButton from "@/Components/UI/AppButton.vue";
+import AppInput from "@/Components/UI/AppInput.vue";
+import AppSelect from "@/Components/UI/AppSelect.vue";
+import AppTextarea from "@/Components/UI/AppTextarea.vue";
+import InvoiceItemTable, {
+    type InvoiceItem,
+    type ProductOption,
+} from "@/Components/Invoice/InvoiceItemTable.vue";
+import InvoiceSummary from "@/Components/Invoice/InvoiceSummary.vue";
+interface Customer {
+    id: number;
+    name: string;
+    company_name?: string;
+    address?: string;
+}
+interface PaymentSettings {
+    bank_name?: string;
+    bank_account_number?: string;
+    bank_account_name?: string;
+}
+interface DraftInvoice {
+    id: number;
+    customer_id: number;
+    invoice_date: string;
+    due_date: string;
+    purchase_order_number?: string;
+    discount_type: "percentage" | "nominal";
+    discount_value: string;
+    tax_percentage: string;
+    notes?: string;
+    terms?: string;
+    items: (InvoiceItem & {
+        product_id: string | number | null;
+        product_name_snapshot?: string;
+        sku_snapshot?: string;
+        unit_snapshot?: string;
+    })[];
+}
+const props = defineProps<{
+    customers: Customer[];
+    products: ProductOption[];
+    defaultTax: string | number;
+    taxEnabled: boolean;
+    discountEnabled: boolean;
+    paymentSettings: PaymentSettings | null;
+    canViewCost: boolean;
+    invoice?: DraftInvoice;
+}>();
+const today = new Date().toISOString().slice(0, 10);
+const dueDateFor = (invoiceDate: string) => {
+    const date = new Date(`${invoiceDate}T12:00:00`);
+    date.setDate(date.getDate() + 7);
+    return date.toISOString().slice(0, 10);
+};
+const due = dueDateFor(today);
+const paymentTerms = (dueDate: string) => {
+    const formattedDate = dueDate
+        ? new Date(`${dueDate}T00:00:00`).toLocaleDateString("id-ID", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+          })
+        : "-";
+    const bank = props.paymentSettings?.bank_name || "-";
+    const accountNumber = props.paymentSettings?.bank_account_number || "-";
+    const accountName = props.paymentSettings?.bank_account_name || "-";
+
+    return [
+        `Pembayaran Jatuh Tempo Tanggal : ${formattedDate}`,
+        "Pembayaran Melalui Transfer :",
+        `Bank : ${bank} | No Rekening : ${accountNumber}`,
+        `Atas Nama Rekening : ${accountName}`,
+    ].join("\n");
+};
+const fresh = (): InvoiceItem => ({
+    product_id: "",
+    product_name: "",
+    sku: "",
+    unit: "Pcs",
+    purchase_price: "0",
+    selling_price: "0",
+    quantity: "1",
+});
+const initial = props.invoice;
+const form = useForm<{
+    customer_id: string;
+    invoice_date: string;
+    due_date: string;
+    purchase_order_number: string;
+    discount_type: "percentage" | "nominal";
+    discount_value: string;
+    tax_percentage: string;
+    notes: string;
+    terms: string;
+    items: InvoiceItem[];
+}>({
+    customer_id: String(initial?.customer_id ?? ""),
+    invoice_date: initial?.invoice_date.slice(0, 10) ?? today,
+    due_date: initial?.due_date.slice(0, 10) ?? due,
+    purchase_order_number: initial?.purchase_order_number ?? "",
+    discount_type: props.discountEnabled
+        ? (initial?.discount_type ?? "percentage")
+        : "nominal",
+    discount_value: props.discountEnabled
+        ? initial?.discount_type === "percentage"
+            ? String(Math.round(Number(initial.discount_value)))
+            : String(initial?.discount_value ?? "0")
+        : "0",
+    tax_percentage: props.taxEnabled
+        ? String(
+              Math.round(Number(initial?.tax_percentage ?? props.defaultTax)),
+          )
+        : "0",
+    notes: initial?.notes ?? "",
+    terms:
+        initial?.terms ?? paymentTerms(initial?.due_date.slice(0, 10) ?? due),
+    items: initial?.items.map((item) => ({
+        product_id: String(item.product_id ?? ""),
+        product_name: item.product_name_snapshot ?? item.product_name ?? "",
+        sku: item.sku_snapshot ?? item.sku ?? "",
+        unit: item.unit_snapshot ?? item.unit ?? "Pcs",
+        purchase_price: String(item.purchase_price ?? 0),
+        selling_price: String(item.selling_price),
+        quantity: String(item.quantity),
+    })) ?? [fresh()],
+});
+watch(
+    () => form.invoice_date,
+    (value) => {
+        if (value) form.due_date = dueDateFor(value);
+    },
+);
+watch(
+    () => form.due_date,
+    (value) => {
+        form.terms = paymentTerms(value);
+    },
+);
+const selectedCustomer = computed(() =>
+    props.customers.find((c) => c.id === Number(form.customer_id)),
+);
+const line = (i: InvoiceItem) =>
+    Number(i.selling_price || 0) * Number(i.quantity || 0);
+const subtotal = computed(() => form.items.reduce((s, i) => s + line(i), 0));
+const discount = computed(() =>
+    props.discountEnabled
+        ? Math.min(
+              form.discount_type === "percentage"
+                  ? (subtotal.value * Number(form.discount_value || 0)) / 100
+                  : Number(form.discount_value || 0),
+              subtotal.value,
+          )
+        : 0,
+);
+const taxBase = computed(() => subtotal.value - discount.value);
+const tax = computed(() =>
+    props.taxEnabled
+        ? (taxBase.value * Number(form.tax_percentage || 0)) / 100
+        : 0,
+);
+const grand = computed(() => taxBase.value + tax.value);
+const priceValidationError = ref("");
+const hasInvalidSellingPrice = computed(() =>
+    form.items.some(
+        (item) =>
+            Number(item.selling_price || 0) <=
+            Number(item.purchase_price || 0),
+    ),
+);
+const add = () => form.items.push(fresh());
+const remove = (i: number) => form.items.length > 1 && form.items.splice(i, 1);
+const generatePoNumber = () => {
+    const datePart = (form.invoice_date || today).replaceAll("-", "");
+    const randomPart = String(Math.floor(1000 + Math.random() * 9000));
+    form.purchase_order_number = `PO-${datePart}-${randomPart}`;
+};
+const submit = () => {
+    if (hasInvalidSellingPrice.value) {
+        priceValidationError.value =
+            "Harga jual harus lebih besar dari harga beli.";
+        return;
+    }
+
+    priceValidationError.value = "";
+    return initial
+        ? form.put(route("invoices.update", initial.id))
+        : form.post(route("invoices.store"));
+};
+</script>
+<template>
+    <Head
+        :title="initial ? 'Edit Invoice' : 'Buat Invoice'"
+    /><AuthenticatedLayout
+        ><template #breadcrumb
+            >Transaksi /
+            {{ initial ? "Edit Invoice" : "Buat Invoice" }}</template
+        >
+        <form @submit.prevent="submit">
+            <div
+                class="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"
+            >
+                <div>
+                    <h1 class="page-title">
+                        {{ initial ? "Edit Invoice" : "Buat Invoice" }}
+                    </h1>
+                    <p class="page-subtitle">
+                        Nilai dihitung realtime dan diverifikasi ulang oleh
+                        server saat disimpan.
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Link v-if="initial" :href="route('invoices.show', initial.id)">
+                        <AppButton variant="secondary">Batal Edit</AppButton>
+                    </Link>
+                    <AppButton type="submit" :disabled="form.processing">{{
+                        initial ? "Simpan Perubahan" : "Simpan sebagai Draft"
+                    }}</AppButton>
+                </div>
+            </div>
+            <section class="panel p-5">
+                <h2 class="mb-5 font-bold">Informasi Invoice</h2>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <label
+                        ><span class="label">Pelanggan *</span
+                        ><AppSelect v-model="form.customer_id" required
+                            ><option value="">Pilih pelanggan</option>
+                            <option
+                                v-for="c in customers"
+                                :key="c.id"
+                                :value="c.id"
+                            >
+                                {{ c.company_name || c.name }}
+                            </option></AppSelect
+                        ></label
+                    ><label
+                        ><span class="label">Nomor PO / Referensi</span>
+                        <div class="flex gap-2">
+                            <AppInput
+                                v-model="form.purchase_order_number"
+                                placeholder="Isi manual atau generate"
+                            />
+                            <button
+                                type="button"
+                                title="Generate Nomor PO"
+                                aria-label="Generate Nomor PO"
+                                class="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-lg border border-sky-300 text-xl font-bold text-sky-600 transition hover:bg-sky-50"
+                                @click="generatePoNumber"
+                            >
+                                ↻
+                            </button>
+                        </div></label
+                    >
+                    <div class="space-y-4">
+                        <label class="block"
+                            ><span class="label">Alamat Penagihan</span
+                            ><AppTextarea
+                                :model-value="selectedCustomer?.address ?? ''"
+                                :rows="3"
+                                disabled
+                        /></label>
+                    </div>
+                    <div class="space-y-4">
+                        <label
+                            ><span class="label">Tanggal Invoice *</span
+                            ><AppInput
+                                v-model="form.invoice_date"
+                                type="date"
+                                required
+                        /></label>
+                    </div>
+                </div>
+            </section>
+            <section class="panel mt-5">
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <h2 class="font-bold">Rincian Barang</h2>
+                </div>
+                <InvoiceItemTable
+                    :items="form.items"
+                    :products="products"
+                    :can-view-cost="canViewCost"
+                    @add="add"
+                    @remove="remove"
+                />
+            </section>
+            <section class="panel mt-5 p-5">
+                <div class="lg:ml-auto lg:w-1/2">
+                    <div class="mb-4 grid grid-cols-2 gap-3">
+                            <label v-if="discountEnabled"
+                                ><span class="label">Tipe Diskon</span
+                                ><AppSelect v-model="form.discount_type"
+                                    ><option value="percentage">
+                                        Persentase (%)
+                                    </option>
+                                    <option value="nominal">
+                                        Nominal Rupiah
+                                    </option></AppSelect
+                                ></label
+                            ><label v-if="discountEnabled"
+                                ><span class="label">Nilai Diskon</span
+                                ><AppInput
+                                    v-model="form.discount_value"
+                                    type="number"
+                                    min="0"
+                                    :max="
+                                        form.discount_type === 'percentage'
+                                            ? 100
+                                            : undefined
+                                    "
+                                    :step="
+                                        form.discount_type === 'percentage'
+                                            ? 1
+                                            : 0.01
+                                    " /></label
+                            ><label v-if="taxEnabled"
+                                ><span class="label">Pajak (%)</span
+                                ><AppInput
+                                    v-model="form.tax_percentage"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                            /></label>
+                    </div>
+                    <InvoiceSummary
+                        :subtotal="subtotal"
+                        :discount="discount"
+                        :tax-base="taxBase"
+                        :tax="tax"
+                        :grand-total="grand"
+                        :discount-enabled="discountEnabled"
+                        :tax-enabled="taxEnabled"
+                    />
+                </div>
+                <div
+                    v-if="priceValidationError || Object.keys(form.errors).length"
+                    class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700"
+                >
+                    {{ priceValidationError || Object.values(form.errors)[0] }}
+                </div>
+            </section>
+        </form></AuthenticatedLayout
+    >
+</template>

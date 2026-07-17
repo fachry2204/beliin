@@ -1,0 +1,1 @@
+<script setup lang="ts">withDefaults(defineProps<{rows?:number}>(),{rows:4});</script><template><div class="animate-pulse space-y-3"><div v-for="row in rows" :key="row" class="h-10 rounded-lg bg-slate-100"/></div></template>

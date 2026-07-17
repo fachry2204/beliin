@@ -1,0 +1,1 @@
+<script setup lang="ts">defineProps<{title?:string}>();</script><template><article class="mx-auto aspect-[1/1.414] w-full max-w-3xl bg-white p-8 shadow-lg"><h1 class="text-2xl font-bold text-sky-700">{{title??'INVOICE'}}</h1><slot/></article></template>

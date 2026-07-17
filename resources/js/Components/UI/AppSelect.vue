@@ -1,0 +1,2 @@
+<script setup lang="ts">defineProps<{modelValue?:string|number;required?:boolean}>();const emit=defineEmits<{(e:'update:modelValue',value:string):void}>();</script>
+<template><select :value="modelValue" :required="required" class="w-full rounded-lg border-slate-300 bg-white text-sm text-slate-800 shadow-sm focus:border-sky-500 focus:ring-sky-500" @change="emit('update:modelValue',($event.target as HTMLSelectElement).value)"><slot/></select></template>

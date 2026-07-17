@@ -1,0 +1,2 @@
+<script setup lang="ts">defineProps<{title?:string;description?:string}>();</script>
+<template><div class="py-14 text-center"><div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-2xl text-sky-500">◇</div><h3 class="font-semibold text-slate-800">{{ title??'Belum ada data' }}</h3><p class="mt-1 text-sm text-slate-500">{{ description??'Data yang Anda cari belum tersedia.' }}</p></div></template>

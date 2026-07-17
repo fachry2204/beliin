@@ -1,0 +1,2 @@
+<script setup lang="ts">defineProps<{modelValue?:string;rows?:number;placeholder?:string}>();const emit=defineEmits<{(e:'update:modelValue',value:string):void}>();</script>
+<template><textarea :value="modelValue" :rows="rows??4" :placeholder="placeholder" class="w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-sky-500 focus:ring-sky-500" @input="emit('update:modelValue',($event.target as HTMLTextAreaElement).value)"/></template>

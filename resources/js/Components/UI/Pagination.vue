@@ -1,0 +1,2 @@
+<script setup lang="ts">import {Link} from '@inertiajs/vue3';interface PageLink{url:string|null;label:string;active:boolean};defineProps<{links:PageLink[]}>();</script>
+<template><div class="flex flex-wrap gap-1"><Link v-for="(link,i) in links" :key="i" :href="link.url??'#'" class="rounded-md border px-3 py-2 text-xs" :class="[link.active?'border-sky-500 bg-sky-500 text-white':'border-slate-200 bg-white text-slate-600',!link.url?'pointer-events-none opacity-40':'']" v-html="link.label"/></div></template>

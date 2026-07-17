@@ -1,0 +1,1 @@
+<script setup lang="ts">import AppInput from './AppInput.vue';defineProps<{modelValue:string;required?:boolean}>();defineEmits<{(e:'update:modelValue',value:string):void}>();</script><template><AppInput :model-value="modelValue" type="date" :required="required" @update:model-value="$emit('update:modelValue',$event)"/></template>

@@ -1,0 +1,7 @@
+<script setup lang="ts">
+import {Head} from '@inertiajs/vue3';import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';import Pagination from '@/Components/UI/Pagination.vue';
+interface Row{id:number;action:string;module:string;reference_type?:string;reference_id?:number;ip_address?:string;created_at:string;user?:{name:string;email:string}}
+interface PageData{data:Row[];links:{url:string|null;label:string;active:boolean}[]}
+defineProps<{rows:PageData}>();
+</script>
+<template><Head title="Audit Log"/><AuthenticatedLayout><template #breadcrumb>Pengaturan / Audit Log</template><div class="mb-6"><h1 class="page-title">Audit Aktivitas</h1><p class="page-subtitle">Jejak perubahan penting pengguna dan transaksi.</p></div><section class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Modul</th><th>Referensi</th><th>IP Address</th></tr></thead><tbody><tr v-for="row in rows.data" :key="row.id"><td>{{new Date(row.created_at).toLocaleString('id-ID')}}</td><td>{{row.user?.name??'Sistem'}}<div class="text-xs text-slate-400">{{row.user?.email}}</div></td><td><span class="rounded bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">{{row.action}}</span></td><td>{{row.module}}</td><td>{{row.reference_type?`${row.reference_type} #${row.reference_id}`:'-'}}</td><td>{{row.ip_address??'-'}}</td></tr></tbody></table></div><div class="border-t p-4"><Pagination :links="rows.links"/></div></section></AuthenticatedLayout></template>
