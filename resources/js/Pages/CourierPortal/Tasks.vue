@@ -25,7 +25,8 @@ const gpsError = ref("");
 const cameraError = ref("");
 const cameraOpen = ref(false);
 const capturing = ref(false);
-const facingMode = ref<"user" | "environment">("environment");
+const savedFacingMode = typeof window !== "undefined" ? window.localStorage.getItem("courier_preferred_camera") : null;
+const facingMode = ref<"user" | "environment">(savedFacingMode === "user" ? "user" : "environment");
 const video = ref<HTMLVideoElement | null>(null);
 let cameraStream: MediaStream | null = null;
 const setVideoRef = (element: unknown) => {
@@ -109,6 +110,7 @@ const closeCamera = () => {
 };
 const switchCamera = async () => {
     facingMode.value = facingMode.value === "environment" ? "user" : "environment";
+    window.localStorage.setItem("courier_preferred_camera", facingMode.value);
     await startCamera();
 };
 const wrapText = (context: CanvasRenderingContext2D, text: string, maxWidth: number) => {
@@ -249,11 +251,17 @@ onMounted(startCourierLocationTracking);
                 <div class="grid grid-cols-3 border-b border-slate-100 px-4 py-4 text-center text-[11px]"><div class="text-emerald-600"><b class="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white">✓</b>Diambil</div><div :class="task.status === 'in_transit' ? 'text-emerald-600' : 'text-slate-400'"><b class="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full" :class="task.status === 'in_transit' ? 'bg-emerald-500 text-white' : 'bg-slate-100'">2</b>Dalam Perjalanan</div><div class="text-slate-400"><b class="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-slate-100">3</b>Sampai Lokasi</div></div>
                 <div class="p-4">
                     <div v-if="task.status === 'accepted'">
-                        <button type="button" class="w-full rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50" :disabled="busy === task.id || !locationReady" @click="openCamera(task.id, 'departure')">Buka Kamera & Mulai Antar</button>
+                        <button type="button" class="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-300 px-4 py-3 text-sm font-bold text-emerald-950 shadow-sm transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50" :disabled="busy === task.id || !locationReady" @click="openCamera(task.id, 'departure')">
+                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3l-1.5-2Z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+                            <span>Buka Kamera &amp; Mulai Antar</span>
+                        </button>
                         <p v-if="!locationReady" class="mt-2 text-center text-xs font-medium text-amber-700">Tunggu hingga GPS dan alamat aktif.</p>
                     </div>
                     <div v-else>
-                        <button type="button" class="block w-full rounded-xl border-2 border-dashed border-slate-300 p-4 text-center text-sm font-semibold text-slate-600 hover:border-sky-400 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!locationReady" @click="openCamera(task.id, 'arrival')">Buka Kamera di Lokasi Tujuan</button>
+                        <button type="button" class="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-300 p-4 text-center text-sm font-bold text-emerald-950 shadow-sm transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!locationReady" @click="openCamera(task.id, 'arrival')">
+                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3l-1.5-2Z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+                            <span>Buka Kamera di Lokasi Tujuan</span>
+                        </button>
                         <img v-if="selected === task.id && preview" :src="preview" class="mt-3 max-h-96 w-full rounded-xl object-contain" alt="Pratinjau bukti pengiriman bertimestamp" />
                         <div v-if="selected === task.id && deliveryAddress" class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"><strong class="block">Lokasi GPS saat foto</strong>{{ deliveryAddress }}</div>
                         <p v-if="selected === task.id && gpsError" class="mt-2 text-xs font-medium text-red-600">{{ gpsError }}</p>
