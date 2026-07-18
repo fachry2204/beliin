@@ -36,6 +36,7 @@
         th { padding: 4px; border: 1px solid #000; background: #fff; color: #000; font-size: 7pt; line-height: 1.25; text-align: left; overflow-wrap: break-word; word-break: normal; }
         td { padding: 4px; border: 1px solid #000; font-size: 7.5pt; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
         .num { text-align: right; }
+        .items-table thead th { text-align: center; }
         .after-items { display: table; width: 100%; margin-top: 6px; table-layout: fixed; }
         .signatures-cell, .summary-cell { display: table-cell; vertical-align: top; }
         .signatures-cell { width: 57%; padding-right: 8px; }
@@ -51,28 +52,28 @@
         .created-by { margin-top: 5px; padding: 4px; border: 1px solid #000; font-size: 7pt; font-weight: bold; line-height: 1.35; overflow-wrap: break-word; word-break: normal; }
         @if($company?->printer_paper_size === 'continuous_9_5x11')
         .print-sheet { padding-top: 5mm; }
-        body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height: 1.35; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.4; }
         .top { padding-bottom: 6px; }
         .brand h1 { margin-bottom: 3px; font-size: 15pt; }
-        .company-meta { font-size: 8.5pt; line-height: 1.3; }
-        .details { margin: 4mm 0 7px; }
-        .invoice-heading { padding-bottom: 1px; font-size: 10pt; line-height: 1.3; }
-        .invoice-heading-label { font-size: 13pt; }
-        .invoice-heading-meta { font-size: 8.5pt; }
-        .invoice-po { padding-bottom: 1px; font-size: 8.5pt; line-height: 1.3; }
-        .box { min-height: 58px; padding: 6px; overflow: visible; }
-        .box h3 { font-size: 9pt; }
-        .billing-line { line-height: 1.35; }
-        .billing-recipient { font-size: 8.5pt; }
-        .items-table th { height: auto; padding: 3px 4px; font-size: 8.5pt; line-height: 1.2; vertical-align: middle; overflow: visible; }
-        .items-table td { height: auto; padding: 3.5px 4px; font-size: 9pt; line-height: 1.25; vertical-align: middle; overflow: visible; }
-        .signatures-panel { min-height: 72px; }
-        .inline-signature { padding: 6px 6px 4px; font-size: 8.5pt; line-height: 1.3; overflow: visible; }
+        .company-meta { font-size: 9.5pt; line-height: 1.35; }
+        .details { margin: 7mm 0 9px; }
+        .invoice-heading { padding-bottom: 2px; font-size: 11pt; line-height: 1.35; }
+        .invoice-heading-label { font-size: 14pt; }
+        .invoice-heading-meta { font-size: 9.5pt; }
+        .invoice-po { padding-bottom: 2px; font-size: 9.5pt; line-height: 1.35; }
+        .box { min-height: 64px; padding: 8px; overflow: visible; }
+        .box h3 { font-size: 10pt; }
+        .billing-line { line-height: 1.45; }
+        .billing-recipient { font-size: 9.5pt; }
+        .items-table th { height: auto; padding: 4px 5px; font-size: 9.5pt; line-height: 1.3; vertical-align: middle; overflow: visible; }
+        .items-table td { height: auto; padding: 4.5px 5px; font-size: 10pt; line-height: 1.35; vertical-align: middle; overflow: visible; }
+        .signatures-panel { min-height: 78px; }
+        .inline-signature { padding: 7px 7px 5px; font-size: 9.5pt; line-height: 1.35; overflow: visible; }
         .signature-space { height: 30px; }
-        .signature-line { padding-bottom: 1px; font-size: 8.5pt; line-height: 1.3; }
-        .summary td { padding: 4px; font-size: 8.5pt; line-height: 1.3; }
-        .summary .grand td { font-size: 10.5pt; }
-        .created-by { margin-top: 5px; padding: 4px; font-size: 8.5pt; line-height: 1.35; }
+        .signature-line { padding-bottom: 2px; font-size: 9.5pt; line-height: 1.35; }
+        .summary td { padding: 5px; font-size: 9.5pt; line-height: 1.35; }
+        .summary .grand td { font-size: 11.5pt; }
+        .created-by { margin-top: 6px; padding: 5px; font-size: 9.5pt; line-height: 1.4; }
         @endif
         @media print {
             * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
