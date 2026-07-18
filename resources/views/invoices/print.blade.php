@@ -6,53 +6,85 @@
     <style>
         @page { size: {{ \App\Support\PrintPaper::cssSize($company) }}; margin: {{ \App\Support\PrintPaper::cssMargin($company) }}; }
         * { box-sizing: border-box; }
-        body { margin: 0; color: #0f172a; font-family: DejaVu Sans, Arial, sans-serif; font-size: 7.2px; line-height: 1.25; }
-        .top { width: 100%; border-bottom: 2px solid #0ea5e9; padding-bottom: 8px; }
+        html, body { width: 100%; }
+        body { margin: 0; color: #000; background: #fff; font-family: "Courier New", Courier, monospace; font-size: 7.5pt; line-height: 1.3; }
+        .print-sheet { width: 100%; max-width: 100%; overflow: visible; }
+        .top { width: 100%; border-bottom: 1px solid #000; padding-bottom: 8px; }
         .brand { text-align: center; }
-        .brand h1 { margin: 0 0 4px; color: #0369a1; font-size: 15px; }
-        .company-meta { font-size: 6.8px; line-height: 1.35; }
-        .company-meta .separator { padding: 0 4px; color: #94a3b8; }
+        .brand h1 { margin: 0 0 4px; color: #000; font-size: 13pt; }
+        .company-meta { max-width: 100%; font-size: 7pt; line-height: 1.4; overflow-wrap: break-word; word-break: normal; }
+        .company-meta .separator { padding: 0 4px; color: #000; }
         .details { display: table; width: 100%; margin: 9px 0; table-layout: fixed; }
-        .customer-col, .invoice-col { display: table-cell; width: 50%; vertical-align: top; }
+        .customer-col, .invoice-col { display: table-cell; vertical-align: top; }
+        .customer-col { width: 42%; }
+        .invoice-col { width: 58%; }
         .customer-col { padding-right: 5px; }
         .invoice-col { padding-left: 5px; }
         .invoice-title { text-align: right; }
-        .invoice-title h2 { margin: 0 0 4px; color: #0f172a; font-size: 12px; }
-        .invoice-primary { font-size: 6.3px; font-weight: bold; white-space: nowrap; }
-        .invoice-dates { margin-top: 3px; font-size: 6.1px; white-space: nowrap; }
-        .box { min-height: 48px; padding: 6px; border: 1px solid #e2e8f0; background: #f8fafc; }
-        .box h3 { margin: 0 0 4px; color: #0369a1; font-size: 7.5px; }
+        .invoice-heading { color: #000; font-size: 9pt; font-weight: bold; line-height: 1.25; overflow-wrap: break-word; word-break: normal; }
+        .invoice-heading-label { font-size: 12pt; }
+        .invoice-heading-meta { font-size: 8pt; }
+        .invoice-po { margin-top: 3px; font-size: 7pt; font-weight: bold; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
+        .box { min-height: 48px; padding: 6px; border: 1px solid #000; background: #fff; }
+        .box h3 { margin: 0 0 4px; color: #000; font-size: 7.5pt; }
         .billing-line { line-height: 1.45; }
-        .billing-recipient { font-size: 5.8px; white-space: nowrap; }
-        .billing-label { color: #0369a1; font-weight: bold; }
-        table { width: 100%; border-collapse: collapse; }
-        th { padding: 4px; background: #0369a1; color: #fff; font-size: 6.6px; text-align: left; }
-        td { padding: 4px; border-bottom: 1px solid #e2e8f0; font-size: 7px; }
+        .billing-recipient { font-size: 7pt; overflow-wrap: break-word; word-break: normal; }
+        .billing-label { color: #000; font-weight: bold; }
+        table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; }
+        thead { display: table-header-group; }
+        tr { break-inside: avoid; page-break-inside: avoid; }
+        th { padding: 4px; border: 1px solid #000; background: #fff; color: #000; font-size: 7pt; line-height: 1.25; text-align: left; overflow-wrap: break-word; word-break: normal; }
+        td { padding: 4px; border: 1px solid #000; font-size: 7.5pt; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
         .num { text-align: right; }
         .after-items { display: table; width: 100%; margin-top: 6px; table-layout: fixed; }
         .signatures-cell, .summary-cell { display: table-cell; vertical-align: top; }
         .signatures-cell { width: 57%; padding-right: 8px; }
         .summary-cell { width: 43%; }
-        .signatures-panel { display: table; width: 100%; min-height: 58px; border: 1px solid #e2e8f0; background: #f8fafc; table-layout: fixed; }
+        .signatures-panel { display: table; width: 100%; min-height: 58px; border: 1px solid #000; background: #fff; table-layout: fixed; }
         .inline-signature { display: table-cell; width: 50%; padding: 5px 6px 4px; font-size: 6.8px; text-align: center; vertical-align: top; }
-        .inline-signature + .inline-signature { border-left: 1px solid #e2e8f0; }
+        .inline-signature + .inline-signature { border-left: 1px solid #000; }
         .summary { width: 100%; margin: 0; }
-        .summary td { padding: 3px 2px; border: 0; font-size: 6.8px; }
-        .summary .grand td { padding-top: 5px; border-top: 2px solid #0ea5e9; color: #0369a1; font-size: 9px; font-weight: bold; }
+        .summary td { padding: 4px; border: 1px solid #000; font-size: 7pt; }
+        .summary .grand td { padding-top: 5px; border: 1px solid #000; border-top-width: 2px; color: #000; font-size: 9pt; font-weight: bold; }
         .signature-space { height: 29px; }
-        .signature-line { width: 82%; margin: 0 auto; padding-top: 3px; border-top: 1px solid #64748b; font-size: 6.5px; font-weight: bold; }
-        .created-by { margin-top: 5px; padding-top: 4px; border-top: 1px solid #cbd5e1; font-size: 6.2px; font-weight: bold; white-space: nowrap; }
+        .signature-line { width: 82%; margin: 0 auto; padding-top: 3px; border-top: 1px solid #000; font-size: 6.5pt; font-weight: bold; }
+        .created-by { margin-top: 5px; padding: 4px; border: 1px solid #000; font-size: 7pt; font-weight: bold; line-height: 1.35; overflow-wrap: break-word; word-break: normal; }
+        @if($company?->printer_paper_size === 'continuous_9_5x11')
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height: 1.35; }
+        .top { padding-bottom: 6px; }
+        .brand h1 { margin-bottom: 3px; font-size: 15pt; }
+        .company-meta { font-size: 8.5pt; line-height: 1.3; }
+        .details { margin: 7px 0; }
+        .invoice-heading { padding-bottom: 1px; font-size: 10pt; line-height: 1.3; }
+        .invoice-heading-label { font-size: 13pt; }
+        .invoice-heading-meta { font-size: 8.5pt; }
+        .invoice-po { padding-bottom: 1px; font-size: 8.5pt; line-height: 1.3; }
+        .box { min-height: 58px; padding: 6px; overflow: visible; }
+        .box h3 { font-size: 9pt; }
+        .billing-line { line-height: 1.35; }
+        .billing-recipient { font-size: 8.5pt; }
+        .items-table th { height: auto; padding: 3px 4px; font-size: 8.5pt; line-height: 1.2; vertical-align: middle; overflow: visible; }
+        .items-table td { height: auto; padding: 3.5px 4px; font-size: 9pt; line-height: 1.25; vertical-align: middle; overflow: visible; }
+        .signatures-panel { min-height: 72px; }
+        .inline-signature { padding: 6px 6px 4px; font-size: 8.5pt; line-height: 1.3; overflow: visible; }
+        .signature-space { height: 30px; }
+        .signature-line { padding-bottom: 1px; font-size: 8.5pt; line-height: 1.3; }
+        .summary td { padding: 4px; font-size: 8.5pt; line-height: 1.3; }
+        .summary .grand td { font-size: 10.5pt; }
+        .created-by { margin-top: 5px; padding: 4px; font-size: 8.5pt; line-height: 1.35; }
+        @endif
+        @media print {
+            * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
+        }
     </style>
 </head>
-<body>
+<body><div class="print-sheet">
     <div class="top">
         <div class="brand">
             <h1>{{ $company?->company_name ?? 'InvoFlow' }}</h1>
             <div class="company-meta">
                 Alamat: {{ $company?->address ?: '-' }}
                 <span class="separator">|</span>No. HP: {{ $company?->phone ?: '-' }}
-                <span class="separator">|</span>Email: {{ $company?->email ?: '-' }}
-                <span class="separator">|</span>NPWP: {{ $company?->tax_number ?: '-' }}
             </div>
         </div>
     </div>
@@ -78,14 +110,20 @@
         </div>
         <div class="invoice-col">
             <div class="box invoice-title">
-                <h2>INVOICE</h2>
-                <div class="invoice-primary">Nomor Invoice : {{ $invoice->invoice_number }} | No. PO : {{ $invoice->purchase_order_number ?: '-' }}</div>
-                <div class="invoice-dates">Tanggal Invoice : {{ $invoice->invoice_date->format('d/m/Y') }}</div>
+                <div class="invoice-heading">
+                    <span class="invoice-heading-label">INVOICE</span>
+                    <span class="invoice-heading-meta"> | Tanggal : {{ $invoice->invoice_date->format('d/m/Y') }} | No Invoice : {{ $invoice->invoice_number }}</span>
+                </div>
+                <div class="invoice-po">No. PO : {{ $invoice->purchase_order_number ?: '-' }}</div>
             </div>
         </div>
     </div>
 
-    <table>
+    <table class="items-table">
+        <colgroup>
+            <col style="width: 7%"><col style="width: 37%"><col style="width: 10%">
+            <col style="width: 12%"><col style="width: 17%"><col style="width: 17%">
+        </colgroup>
         <thead>
             <tr><th>No</th><th>Nama Barang</th><th class="num">Qty</th><th>Satuan</th><th class="num">Harga</th><th class="num">Total</th></tr>
         </thead>
@@ -133,6 +171,7 @@
                 Di Buat Oleh : {{ $invoice->creator?->name ?: '-' }} &nbsp;&nbsp; Tanggal : {{ $invoice->created_at?->format('d/m/Y') ?: '-' }}
             </div>
         </div>
+    </div>
     </div>
     @if($autoPrint ?? false)
         <script>

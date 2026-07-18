@@ -1358,9 +1358,13 @@ class InvoiceDomainTest extends TestCase
             ->assertSee('Jl. Maju No. 1')
             ->assertSee('Alamat:')
             ->assertSee('No. HP:')
-            ->assertSee('Nomor Invoice :')
+            ->assertDontSee('Email:')
+            ->assertDontSee('NPWP:')
+            ->assertSee('<span class="invoice-heading-label">INVOICE</span>', false)
             ->assertSee('No. PO :')
-            ->assertSee('Tanggal Invoice :')
+            ->assertSee('| Tanggal :')
+            ->assertSee('| No Invoice :')
+            ->assertDontSee('Tanggal Invoice :')
             ->assertDontSee('Tanggal Jatuh Tempo :')
             ->assertDontSee('Status:')
             ->assertDontSee('Catatan')
@@ -1375,6 +1379,70 @@ class InvoiceDomainTest extends TestCase
             ->assertSee("window.print()", false)
             ->assertDontSee('Cetak Invoice')
             ->assertSee('@page { size: A5 portrait;', false);
+    }
+
+    public function test_continuous_form_print_uses_full_9_5_by_11_inch_paper_and_readable_font(): void
+    {
+        CompanySetting::query()->updateOrCreate([], [
+            'company_name' => 'PT Maju',
+            'invoice_prefix' => 'INV',
+            'printer_type' => 'dot_matrix',
+            'printer_paper_size' => 'continuous_9_5x11',
+            'printer_orientation' => 'portrait',
+        ]);
+
+        $invoice = $this->makeInvoice();
+        $invoice->update(['status' => InvoiceStatus::Unpaid, 'issued_at' => now()]);
+
+        $this->actingAs($this->admin)
+            ->get(route('invoices.print', $invoice))
+            ->assertOk()
+            ->assertSee('@page { size: 241.3mm 279.4mm;', false)
+            ->assertSee('margin: 10mm 16mm;', false)
+            ->assertSee('body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height: 1.35;', false)
+            ->assertSee('.print-sheet { width: 100%; max-width: 100%; overflow: visible; }', false)
+            ->assertSee('.items-table td { height: auto; padding: 3.5px 4px; font-size: 9pt; line-height: 1.25;', false)
+            ->assertSee('border: 1px solid #000;', false)
+            ->assertSee('<span class="invoice-heading-label">INVOICE</span>', false)
+            ->assertSee('<span class="invoice-heading-meta"> | Tanggal :', false)
+            ->assertSee('| No Invoice :', false)
+            ->assertSee('<div class="invoice-po">No. PO :', false)
+            ->assertDontSee('| No. PO :', false)
+            ->assertDontSee('background: #0369a1;', false);
+    }
+
+    public function test_continuous_form_facture_print_is_monochrome_and_uses_bordered_table(): void
+    {
+        CompanySetting::query()->updateOrCreate([], [
+            'company_name' => 'PT Maju',
+            'invoice_prefix' => 'INV',
+            'printer_type' => 'dot_matrix',
+            'printer_paper_size' => 'continuous_9_5x11',
+            'printer_orientation' => 'portrait',
+        ]);
+
+        $invoice = $this->makeInvoice();
+        $invoice->update(['status' => InvoiceStatus::Unpaid, 'issued_at' => now()]);
+        $this->actingAs($this->admin)->post(route('combined-invoices.store'), [
+            'customer_id' => $invoice->customer_id,
+            'invoice_ids' => [$invoice->id],
+            'use_due_date' => false,
+            'due_date' => null,
+        ])->assertRedirect();
+
+        $document = CombinedInvoiceDocument::latest('id')->firstOrFail();
+
+        $this->get(route('combined-invoices.print', $document))
+            ->assertOk()
+            ->assertSee('@page { size: 241.3mm 279.4mm; margin: 10mm 16mm;', false)
+            ->assertSee('body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height: 1.35;', false)
+            ->assertSee('class="invoice-table"', false)
+            ->assertSee('.print-sheet { width: 100%; max-width: 100%; overflow: visible; }', false)
+            ->assertSee('.invoice-table td { height: auto; padding: 3.5px 4px; font-size: 9pt; line-height: 1.25;', false)
+            ->assertSee('border: 1px solid #000;', false)
+            ->assertDontSee('Email:')
+            ->assertDontSee('NPWP:')
+            ->assertDontSee('background:#0369a1', false);
     }
 
     public function test_overdue_invoice_status_can_be_applied_without_hiding_financial_record(): void

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InputError from "@/Components/InputError.vue";
+import Modal from "@/Components/Modal.vue";
 import type { PageProps } from "@/types";
 import { Head, Link, useForm, usePage } from "@inertiajs/vue3";
 import { computed, ref } from "vue";
@@ -14,6 +15,8 @@ const page = usePage<
 >();
 const company = computed(() => page.props.company);
 const showPassword = ref(false);
+const showLoginError = ref(false);
+const loginErrorMessage = ref("");
 const form = useForm({
     username: "",
     password: "",
@@ -21,9 +24,23 @@ const form = useForm({
 });
 
 const submit = () => {
+    showLoginError.value = false;
+    loginErrorMessage.value = "";
+
     form.post(route("login"), {
+        onError: (errors) => {
+            if (errors.username) {
+                loginErrorMessage.value = errors.username;
+                showLoginError.value = true;
+            }
+        },
         onFinish: () => form.reset("password"),
     });
+};
+
+const closeLoginError = () => {
+    showLoginError.value = false;
+    form.clearErrors("username");
 };
 </script>
 
@@ -106,7 +123,6 @@ const submit = () => {
                                     class="h-14 w-full rounded-xl border border-slate-300 bg-slate-50 pl-12 pr-4 text-[15px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#487fff] focus:bg-white focus:ring-4 focus:ring-[#487fff]/10"
                                 />
                             </div>
-                            <InputError class="mt-2" :message="form.errors.username" />
                         </div>
 
                         <div>
@@ -170,5 +186,35 @@ const submit = () => {
                 </div>
             </section>
         </div>
+
+        <Modal :show="showLoginError" max-width="md" @close="closeLoginError">
+            <div
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="login-error-title"
+                aria-describedby="login-error-description"
+                class="px-6 py-7 text-center sm:px-8"
+            >
+                <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600 ring-8 ring-red-50/60">
+                    <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 7v6" />
+                        <path d="M12 17h.01" />
+                    </svg>
+                </div>
+                <h2 id="login-error-title" class="mt-5 text-xl font-bold text-slate-900">Login tidak berhasil</h2>
+                <p id="login-error-description" class="mt-2 text-sm leading-6 text-slate-600">
+                    {{ loginErrorMessage }}
+                </p>
+                <button
+                    type="button"
+                    autofocus
+                    class="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-[#487fff] px-5 text-sm font-bold text-white transition hover:bg-[#376ee8] focus:outline-none focus:ring-4 focus:ring-[#487fff]/25"
+                    @click="closeLoginError"
+                >
+                    Coba Lagi
+                </button>
+            </div>
+        </Modal>
     </main>
 </template>
