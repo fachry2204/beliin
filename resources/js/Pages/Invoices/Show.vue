@@ -10,6 +10,7 @@ import CurrencyInput from "@/Components/UI/CurrencyInput.vue";
 import AppModal from "@/Components/UI/AppModal.vue";
 import StatusBadge from "@/Components/UI/StatusBadge.vue";
 import { percentageText } from "@/utils/percentage";
+import { directPrint } from "@/utils/directPrint";
 interface Item {
     id: number;
     product_name_snapshot: string;
@@ -192,6 +193,10 @@ const toggleDocumentMenu = () => {
     documentMenuOpen.value = !documentMenuOpen.value;
     editMenuOpen.value = false;
 };
+const printInvoice = () => {
+    documentMenuOpen.value = false;
+    directPrint(route("invoices.print", props.invoice.id));
+};
 const submitShipping = () => {
     const options = { onSuccess: () => (shippingOpen.value = false) };
 
@@ -274,12 +279,11 @@ const remove = () =>
                         v-if="documentMenuOpen"
                         class="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl"
                     >
-                        <a
-                            :href="route('invoices.print', invoice.id)"
-                            target="_blank"
-                            class="block rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700"
-                            @click="documentMenuOpen = false"
-                        >Cetak Invoice</a>
+                        <button
+                            type="button"
+                            class="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700"
+                            @click="printInvoice"
+                        >Cetak Invoice</button>
                         <a
                             :href="route('invoices.pdf', invoice.id)"
                             class="block rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700"

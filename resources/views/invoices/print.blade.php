@@ -50,11 +50,12 @@
         .signature-line { width: 82%; margin: 0 auto; padding-top: 3px; border-top: 1px solid #000; font-size: 6.5pt; font-weight: bold; }
         .created-by { margin-top: 5px; padding: 4px; border: 1px solid #000; font-size: 7pt; font-weight: bold; line-height: 1.35; overflow-wrap: break-word; word-break: normal; }
         @if($company?->printer_paper_size === 'continuous_9_5x11')
+        .print-sheet { padding-top: 5mm; }
         body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height: 1.35; }
         .top { padding-bottom: 6px; }
         .brand h1 { margin-bottom: 3px; font-size: 15pt; }
         .company-meta { font-size: 8.5pt; line-height: 1.3; }
-        .details { margin: 7px 0; }
+        .details { margin: 4mm 0 7px; }
         .invoice-heading { padding-bottom: 1px; font-size: 10pt; line-height: 1.3; }
         .invoice-heading-label { font-size: 13pt; }
         .invoice-heading-meta { font-size: 8.5pt; }

@@ -28,11 +28,12 @@ td { padding: 4px; border: 1px solid #000; font-size: 7.5pt; line-height: 1.3; o
 .totals td { font-weight: bold; }
 .grand td { border-top-width: 2px; color: #000; font-size: 9pt; }
 @if($company?->printer_paper_size === 'continuous_9_5x11')
+.print-sheet { padding-top: 5mm; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height: 1.35; }
 .company { padding-bottom: 6px; }
 .company h1 { margin-bottom: 3px; font-size: 15pt; line-height: 1.3; }
 .company p { font-size: 8.5pt; line-height: 1.3; }
-.title { margin: 7px 0; line-height: 1.35; }
+.title { margin: 4mm 0 7px; line-height: 1.35; }
 .title h2 { font-size: 13pt; line-height: 1.3; }
 .customer { margin-bottom: 7px; padding: 6px; font-size: 8.5pt; line-height: 1.35; overflow: visible; }
 .invoice-table th { height: auto; padding: 3px 4px; font-size: 8.5pt; line-height: 1.2; vertical-align: middle; overflow: visible; }

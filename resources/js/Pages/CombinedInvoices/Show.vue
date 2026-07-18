@@ -9,6 +9,7 @@ import AppTextarea from "@/Components/UI/AppTextarea.vue";
 import AppModal from "@/Components/UI/AppModal.vue";
 import StatusBadge from "@/Components/UI/StatusBadge.vue";
 import { percentageText } from "@/utils/percentage";
+import { directPrint } from "@/utils/directPrint";
 
 interface Customer {
     id: number;
@@ -144,6 +145,8 @@ const remove = () =>
     confirm(
         `Hapus Faktur ${props.document.facture_number}? Invoice di dalamnya tidak akan dihapus.`,
     ) && router.delete(route("combined-invoices.destroy", props.document.id));
+const printFacture = () =>
+    directPrint(route("combined-invoices.print", props.document.id));
 const money = (value: string | number) =>
     new Intl.NumberFormat("id-ID", {
         style: "currency",
@@ -227,10 +230,8 @@ const commissionWarning = computed(
                     "
                     @click="paymentOpen = true"
                     >Bayar</AppButton
-                ><a
-                    :href="route('combined-invoices.print', document.id)"
-                    target="_blank"
-                    ><AppButton variant="secondary">Cetak</AppButton></a
+                ><AppButton variant="secondary" @click="printFacture"
+                    >Cetak</AppButton
                 ><a :href="route('combined-invoices.pdf', document.id)"
                     ><AppButton variant="secondary">Download PDF</AppButton></a
                 ><AppButton

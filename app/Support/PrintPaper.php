@@ -39,7 +39,7 @@ class PrintPaper
         if ($setting?->printer_type === 'dot_matrix') {
             // Sisakan area aman untuk perforasi dan batas cetak mekanis printer tractor-feed.
             return $setting?->printer_paper_size === 'continuous_9_5x11'
-                ? '10mm 16mm'
+                ? '15mm 16mm 10mm'
                 : '8mm 10mm';
         }
 
