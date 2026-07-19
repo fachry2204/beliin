@@ -30,6 +30,7 @@ use Carbon\Carbon;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -397,6 +398,21 @@ class InvoiceDomainTest extends TestCase
         $unusedCustomer = Customer::factory()->create();
         $this->delete(route('customers.destroy', $unusedCustomer))->assertRedirect();
         $this->assertSoftDeleted('customers', ['id' => $unusedCustomer->id]);
+    }
+
+    public function test_dashboard_still_renders_when_an_invoice_customer_was_soft_deleted(): void
+    {
+        $invoice = $this->makeInvoice();
+        $this->customer->delete();
+        Cache::forget('dashboard.metrics.v3');
+
+        $this->actingAs($this->admin)->get(route('dashboard'))->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->component('Dashboard')
+                ->where('recent.0.id', $invoice->id)
+                ->where('recent.0.customer.name', 'Budi')
+                ->where('recent.0.customer.company_name', 'PT Maju')
+        );
     }
 
     public function test_admin_can_delete_a_cancelled_invoice_with_legacy_payment_data(): void

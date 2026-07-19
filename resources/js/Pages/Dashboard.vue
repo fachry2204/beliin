@@ -11,7 +11,9 @@ interface Invoice {
     grand_total: string;
     paid_amount: string;
     status: string | { value: string };
-    customer: { name: string; company_name?: string };
+    billing_name?: string | null;
+    billing_company?: string | null;
+    customer: { name: string; company_name?: string | null } | null;
 }
 interface Point {
     period: string;
@@ -79,6 +81,12 @@ const labelTop = (value: string | number) =>
     `${Math.max(3, 92 - (Number(value) / max.value) * 75 - 2)}%`;
 const statusValue = (status: Invoice["status"]) =>
     typeof status === "string" ? status : status.value;
+const customerName = (invoice: Invoice) =>
+    invoice.customer?.company_name ||
+    invoice.customer?.name ||
+    invoice.billing_company ||
+    invoice.billing_name ||
+    "Client tidak tersedia";
 </script>
 <template>
     <Head title="Dashboard" /><AuthenticatedLayout
@@ -234,10 +242,7 @@ const statusValue = (status: Invoice["status"]) =>
                                 >
                             </td>
                             <td>
-                                {{
-                                    row.customer.company_name ||
-                                    row.customer.name
-                                }}
+                                {{ customerName(row) }}
                             </td>
                             <td>
                                 {{

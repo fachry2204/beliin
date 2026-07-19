@@ -16,7 +16,7 @@ class DashboardController extends Controller
         }
 
         $this->authorize('dashboard.view');
-        $data = Cache::remember('dashboard.metrics.v2', 60, function () {
+        $data = Cache::remember('dashboard.metrics.v3', 60, function () {
             $monthly = Invoice::whereMonth('invoice_date', now()->month)->whereYear('invoice_date', now()->year);
             $chartStart = now()->startOfMonth()->subMonths(11);
             $chartInvoices = Invoice::query()
@@ -50,7 +50,20 @@ class DashboardController extends Controller
                     'receivables' => Invoice::whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::PartiallyPaid, InvoiceStatus::Overdue])->sum('remaining_amount'),
                     'monthly' => (clone $monthly)->count(), 'profit' => (clone $monthly)->sum('gross_profit'),
                 ],
-                'recent' => Invoice::with('customer:id,name,company_name')->latest('invoice_date')->limit(8)->get(),
+                'recent' => Invoice::with('customer:id,name,company_name,deleted_at')
+                    ->latest('invoice_date')->limit(8)->get()
+                    ->map(fn (Invoice $invoice) => [
+                        'id' => $invoice->id,
+                        'invoice_number' => $invoice->invoice_number,
+                        'invoice_date' => $invoice->invoice_date,
+                        'grand_total' => $invoice->grand_total,
+                        'paid_amount' => $invoice->paid_amount,
+                        'status' => $invoice->status,
+                        'customer' => [
+                            'name' => $invoice->customer?->name ?: $invoice->billing_name ?: 'Client tidak tersedia',
+                            'company_name' => $invoice->customer?->company_name ?: $invoice->billing_company,
+                        ],
+                    ]),
                 'chart' => $chart,
                 'dailyChart' => $dailyChart,
             ];
