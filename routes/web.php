@@ -28,6 +28,7 @@ Route::redirect('/', '/dashboard');
 Route::get('/dashboard', DashboardController::class)->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('customers/{customer}/item-prices', [CustomerController::class, 'itemPrices'])->name('customers.item-prices');
     Route::resource('customers', CustomerController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::resource('couriers', CourierController::class)->only(['index', 'show', 'store', 'update', 'destroy']);
     Route::get('courier-map', [CourierController::class, 'map'])->name('couriers.map');

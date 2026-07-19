@@ -6,7 +6,9 @@ import AppButton from "@/Components/UI/AppButton.vue";
 import AppInput from "@/Components/UI/AppInput.vue";
 import AppSelect from "@/Components/UI/AppSelect.vue";
 import AppTextarea from "@/Components/UI/AppTextarea.vue";
+import Modal from "@/Components/Modal.vue";
 import InvoiceItemTable, {
+    type CustomerPriceOption,
     type InvoiceItem,
     type ProductOption,
 } from "@/Components/Invoice/InvoiceItemTable.vue";
@@ -164,34 +166,97 @@ const tax = computed(() =>
         : 0,
 );
 const grand = computed(() => taxBase.value + tax.value);
-const priceValidationError = ref("");
 const calculatorOpen = ref(false);
-const hasInvalidSellingPrice = computed(() =>
-    form.items.some(
-        (item) =>
-            Number(item.selling_price || 0) <=
-            Number(item.purchase_price || 0),
-    ),
+const calculatorItemIndex = ref(0);
+const customerPrices = ref<CustomerPriceOption[]>([]);
+const customerPricesLoading = ref(false);
+let customerPriceRequest = 0;
+const lossWarningOpen = ref(false);
+const lossItems = computed(() =>
+    form.items
+        .map((item) => ({
+            name: item.product_name || "Barang tanpa nama",
+            loss:
+                Math.max(
+                    Number(item.purchase_price || 0) -
+                        Number(item.selling_price || 0),
+                    0,
+                ) * Number(item.quantity || 0),
+        }))
+        .filter((item) => item.loss > 0),
 );
+const estimatedLoss = computed(() =>
+    lossItems.value.reduce((total, item) => total + item.loss, 0),
+);
+const money = (value: number | string) =>
+    new Intl.NumberFormat("id-ID", {
+        style: "currency",
+        currency: "IDR",
+        maximumFractionDigits: 0,
+    }).format(Number(value));
 const add = () => form.items.push(fresh());
 const remove = (i: number) => form.items.length > 1 && form.items.splice(i, 1);
+const calculatorItem = computed(
+    () => form.items[calculatorItemIndex.value] ?? form.items[0],
+);
+const focusCalculatorItem = (index: number) => {
+    calculatorItemIndex.value = index;
+};
+const pasteCalculatorPrice = (
+    field: "purchase_price" | "selling_price",
+    value: string,
+) => {
+    const item = calculatorItem.value;
+    if (!item || (field === "purchase_price" && !props.canViewCost)) return;
+    item[field] = value;
+};
 const generatePoNumber = () => {
     const datePart = (form.invoice_date || today).replaceAll("-", "");
     const randomPart = String(Math.floor(1000 + Math.random() * 9000));
     form.purchase_order_number = `PO-${datePart}-${randomPart}`;
 };
-const submit = () => {
-    if (hasInvalidSellingPrice.value) {
-        priceValidationError.value =
-            "Harga jual harus lebih besar dari harga beli.";
-        return;
-    }
-
-    priceValidationError.value = "";
+const persistInvoice = () => {
     return initial
         ? form.put(route("invoices.update", initial.id))
         : form.post(route("invoices.store"));
 };
+const submit = () => {
+    if (estimatedLoss.value > 0) {
+        lossWarningOpen.value = true;
+        return;
+    }
+
+    persistInvoice();
+};
+const confirmLossAndSubmit = () => {
+    lossWarningOpen.value = false;
+    persistInvoice();
+};
+const loadCustomerPrices = async (customerId: string) => {
+    const requestId = ++customerPriceRequest;
+    customerPrices.value = [];
+    if (!customerId) return;
+
+    customerPricesLoading.value = true;
+    try {
+        const response = await fetch(
+            route("customers.item-prices", Number(customerId)),
+            { headers: { Accept: "application/json" } },
+        );
+        if (!response.ok) throw new Error("Gagal memuat riwayat harga pelanggan.");
+        const payload = (await response.json()) as { items: CustomerPriceOption[] };
+        if (requestId === customerPriceRequest) customerPrices.value = payload.items;
+    } catch {
+        if (requestId === customerPriceRequest) customerPrices.value = [];
+    } finally {
+        if (requestId === customerPriceRequest) customerPricesLoading.value = false;
+    }
+};
+watch(
+    () => form.customer_id,
+    (customerId) => loadCustomerPrices(customerId),
+    { immediate: true },
+);
 </script>
 <template>
     <Head
@@ -286,13 +351,24 @@ const submit = () => {
             <section class="panel mt-5">
                 <div class="border-b border-slate-200 px-5 py-4">
                     <h2 class="font-bold">Rincian Barang</h2>
+                    <p class="mt-1 text-xs text-slate-500">
+                        <template v-if="customerPricesLoading">Memuat riwayat harga pelanggan...</template>
+                        <template v-else-if="customerPrices.length">
+                            {{ customerPrices.length }} barang dari riwayat pelanggan siap digunakan.
+                        </template>
+                        <template v-else>
+                            Pilih pelanggan dan cari barang. Harga terakhir pelanggan akan diprioritaskan.
+                        </template>
+                    </p>
                 </div>
                 <InvoiceItemTable
                     :items="form.items"
                     :products="products"
+                    :customer-prices="customerPrices"
                     :can-view-cost="canViewCost"
                     @add="add"
                     @remove="remove"
+                    @focus-item="focusCalculatorItem"
                 />
             </section>
             <section class="panel mt-5 p-5">
@@ -345,14 +421,65 @@ const submit = () => {
                     />
                 </div>
                 <div
-                    v-if="priceValidationError || Object.keys(form.errors).length"
+                    v-if="Object.keys(form.errors).length"
                     class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700"
                 >
-                    {{ priceValidationError || Object.values(form.errors)[0] }}
+                    {{ Object.values(form.errors)[0] }}
                 </div>
             </section>
         </form>
-        <InvoiceCalculator :show="calculatorOpen" @close="calculatorOpen = false" />
+        <Modal :show="lossWarningOpen" max-width="lg" :closeable="false">
+            <div class="p-6">
+                <div class="flex items-start gap-4">
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xl text-amber-700">
+                        !
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Peringatan Invoice Rugi</h2>
+                        <p class="mt-1 text-sm text-slate-600">
+                            Harga jual beberapa barang lebih kecil dari harga beli.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div class="space-y-2 text-sm text-slate-700">
+                        <div
+                            v-for="(item, index) in lossItems"
+                            :key="`${item.name}-${index}`"
+                            class="flex justify-between gap-4"
+                        >
+                            <span>{{ item.name }}</span>
+                            <strong class="text-red-700">- {{ money(item.loss) }}</strong>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center justify-between border-t border-amber-200 pt-4">
+                        <span class="font-semibold text-slate-800">Estimasi total kerugian</span>
+                        <strong class="text-xl text-red-700">{{ money(estimatedLoss) }}</strong>
+                    </div>
+                </div>
+
+                <p class="mt-4 text-sm font-medium text-slate-700">
+                    Apakah Anda tetap ingin menyimpan invoice ini?
+                </p>
+                <div class="mt-6 flex flex-col-reverse justify-end gap-2 sm:flex-row">
+                    <AppButton variant="secondary" @click="lossWarningOpen = false">
+                        Tidak, Kembali ke Invoice
+                    </AppButton>
+                    <AppButton :disabled="form.processing" @click="confirmLossAndSubmit">
+                        Ya, Lanjutkan Simpan
+                    </AppButton>
+                </div>
+            </div>
+        </Modal>
+        <InvoiceCalculator
+            :show="calculatorOpen"
+            :target-item-name="calculatorItem?.product_name"
+            :can-paste-purchase="canViewCost"
+            @close="calculatorOpen = false"
+            @paste-purchase="pasteCalculatorPrice('purchase_price', $event)"
+            @paste-selling="pasteCalculatorPrice('selling_price', $event)"
+        />
     </AuthenticatedLayout
     >
 </template>

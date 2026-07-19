@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
-const props = defineProps<{ show: boolean }>();
-const emit = defineEmits<{ (event: "close"): void }>();
+const props = defineProps<{
+    show: boolean;
+    targetItemName?: string;
+    canPastePurchase: boolean;
+}>();
+const emit = defineEmits<{
+    (event: "close"): void;
+    (event: "paste-purchase", value: string): void;
+    (event: "paste-selling", value: string): void;
+}>();
 
 const entry = ref("0");
 const accumulator = ref<number | null>(null);
 const pendingOperator = ref<string | null>(null);
 const waitingForEntry = ref(false);
-const copied = ref(false);
+const pastedTarget = ref<"purchase" | "selling" | null>(null);
 const calculatorWindow = ref<HTMLElement | null>(null);
 const position = ref({ left: 0, top: 0 });
 const dragOffset = ref({ x: 0, y: 0 });
@@ -29,7 +37,7 @@ const reset = () => {
     accumulator.value = null;
     pendingOperator.value = null;
     waitingForEntry.value = false;
-    copied.value = false;
+    pastedTarget.value = null;
 };
 
 watch(
@@ -86,7 +94,7 @@ const startDragging = (event: PointerEvent) => {
 onUnmounted(stopDragging);
 
 const inputDigit = (digit: string) => {
-    copied.value = false;
+    pastedTarget.value = null;
     if (entry.value === "Error" || waitingForEntry.value) {
         entry.value = digit;
         waitingForEntry.value = false;
@@ -97,7 +105,7 @@ const inputDigit = (digit: string) => {
 };
 
 const inputDecimal = () => {
-    copied.value = false;
+    pastedTarget.value = null;
     if (entry.value === "Error" || waitingForEntry.value) {
         entry.value = "0.";
         waitingForEntry.value = false;
@@ -141,7 +149,7 @@ const chooseOperator = (operator: string) => {
     }
     pendingOperator.value = operator;
     waitingForEntry.value = true;
-    copied.value = false;
+    pastedTarget.value = null;
 };
 
 const equals = () => {
@@ -151,7 +159,7 @@ const equals = () => {
     accumulator.value = Number.isFinite(result) ? result : null;
     pendingOperator.value = null;
     waitingForEntry.value = true;
-    copied.value = false;
+    pastedTarget.value = null;
 };
 
 const toggleSign = () => {
@@ -171,10 +179,18 @@ const backspace = () => {
         : entry.value.slice(0, -1);
 };
 
-const copyResult = async () => {
-    if (entry.value === "Error") return;
-    await navigator.clipboard.writeText(entry.value);
-    copied.value = true;
+const pasteableValue = computed(() => {
+    const value = Number(entry.value);
+    return Number.isFinite(value) && value >= 0 ? String(Math.round(value)) : null;
+});
+const pasteResult = (target: "purchase" | "selling") => {
+    if (pasteableValue.value === null) return;
+    if (target === "purchase") {
+        emit("paste-purchase", pasteableValue.value);
+    } else {
+        emit("paste-selling", pasteableValue.value);
+    }
+    pastedTarget.value = target;
 };
 
 const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0"];
@@ -245,13 +261,30 @@ const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0"];
                 <button type="button" class="calculator-key bg-sky-500 text-white hover:bg-sky-600" @click="equals">=</button>
             </div>
 
-            <button
-                type="button"
-                class="mt-3 w-full rounded-lg border border-sky-300 px-4 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-50"
-                @click="copyResult"
-            >
-                {{ copied ? "Hasil Tersalin" : "Salin Hasil" }}
-            </button>
+            <p class="mt-3 text-xs text-slate-500">
+                Target barang:
+                <strong class="text-slate-700">{{ targetItemName || "Baris pertama" }}</strong>
+            </p>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+                <button
+                    type="button"
+                    data-testid="paste-purchase-price"
+                    class="rounded-lg border border-amber-300 px-3 py-2.5 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="pasteableValue === null || !canPastePurchase"
+                    @click="pasteResult('purchase')"
+                >
+                    {{ pastedTarget === "purchase" ? "Harga Modal Terisi" : "Paste ke Harga Modal" }}
+                </button>
+                <button
+                    type="button"
+                    data-testid="paste-selling-price"
+                    class="rounded-lg border border-emerald-300 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="pasteableValue === null"
+                    @click="pasteResult('selling')"
+                >
+                    {{ pastedTarget === "selling" ? "Harga Jual Terisi" : "Paste ke Harga Jual" }}
+                </button>
+            </div>
                 </div>
             </section>
         </div>

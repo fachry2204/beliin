@@ -6,13 +6,18 @@ use App\Http\Requests\CustomerRequest;
 use App\Models\Customer;
 use App\Services\AuditLogService;
 use App\Services\CustomerCodeService;
+use App\Services\CustomerItemPriceHistoryService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
 {
-    public function __construct(private AuditLogService $audit, private CustomerCodeService $customerCodes) {}
+    public function __construct(
+        private AuditLogService $audit,
+        private CustomerCodeService $customerCodes,
+        private CustomerItemPriceHistoryService $customerItemPrices,
+    ) {}
 
     public function index(Request $r)
     {
@@ -38,6 +43,18 @@ class CustomerController extends Controller
         $this->audit->record('update', 'customer', $customer, $old, $customer->fresh()->toArray());
 
         return back()->with('success', 'Pelanggan diperbarui.');
+    }
+
+    public function itemPrices(Request $request, Customer $customer)
+    {
+        $this->authorize('invoices.create');
+
+        return response()->json([
+            'items' => $this->customerItemPrices->latestForCustomer(
+                $customer,
+                $request->user()->can('profit.view'),
+            ),
+        ]);
     }
 
     public function destroy(Customer $customer)

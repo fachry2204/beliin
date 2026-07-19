@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import AppInput from "@/Components/UI/AppInput.vue";
+import AppSelect from "@/Components/UI/AppSelect.vue";
 import CurrencyInput from "@/Components/UI/CurrencyInput.vue";
 export interface ProductOption {
     id: number;
@@ -9,6 +10,21 @@ export interface ProductOption {
     unit: string;
     selling_price: string;
     purchase_price: string;
+}
+export interface CustomerPriceOption {
+    product_id: number | null;
+    name: string;
+    sku: string | null;
+    unit: string;
+    selling_price: string;
+    purchase_price: string | null;
+    invoice_number: string | null;
+    invoice_date: string | null;
+}
+interface SearchProductOption extends Omit<ProductOption, "id"> {
+    id: number | null;
+    source: "customer_history" | "master";
+    invoice_number?: string | null;
 }
 export interface InvoiceItem {
     product_id: string;
@@ -22,23 +38,72 @@ export interface InvoiceItem {
 const props = defineProps<{
     items: InvoiceItem[];
     products: ProductOption[];
+    customerPrices: CustomerPriceOption[];
     canViewCost: boolean;
 }>();
 const emit = defineEmits<{
     (e: "add"): void;
     (e: "remove", index: number): void;
+    (e: "focus-item", index: number): void;
 }>();
 const product = (id: string) => props.products.find((p) => p.id === Number(id));
 const openIndex = ref<number | null>(null);
 const activeResultIndex = ref(0);
 const touchedSellingPrices = ref(new Set<number>());
+const defaultUnits = [
+    "Pcs",
+    "Kg",
+    "Gram",
+    "Ikat",
+    "Bungkus",
+    "Pack",
+    "Kotak",
+    "Dus",
+    "Karung",
+    "Sak",
+    "Liter",
+    "Botol",
+    "Kaleng",
+    "Drg",
+    "M3",
+];
+const unitOptions = (item: InvoiceItem) =>
+    Array.from(
+        new Set(
+            [item.unit, ...props.products.map((product) => product.unit), ...defaultUnits]
+                .map((unit) => unit?.trim())
+                .filter(Boolean),
+        ),
+    );
 const normalize = (value: string) => value.trim().toLocaleLowerCase("id-ID");
+const searchableProducts = computed<SearchProductOption[]>(() => {
+    const historicalProductIds = new Set(
+        props.customerPrices
+            .map((price) => price.product_id)
+            .filter((id): id is number => id !== null),
+    );
+    const history = props.customerPrices.map((price) => ({
+        id: price.product_id,
+        name: price.name,
+        sku: price.sku ?? "MANUAL",
+        unit: price.unit,
+        selling_price: price.selling_price,
+        purchase_price: price.purchase_price ?? "0",
+        source: "customer_history" as const,
+        invoice_number: price.invoice_number,
+    }));
+    const master = props.products
+        .filter((product) => !historicalProductIds.has(product.id))
+        .map((product) => ({ ...product, source: "master" as const }));
+
+    return [...history, ...master];
+});
 const filteredProducts = (item: InvoiceItem) => {
     const query = normalize(item.product_name);
     if (!query) return [];
 
     const words = query.split(/\s+/);
-    return props.products
+    return searchableProducts.value
         .filter((p) => {
             const searchable = normalize(`${p.name} ${p.sku}`);
             return words.every((word) => searchable.includes(word));
@@ -73,8 +138,8 @@ const updateProductName = (item: InvoiceItem, index: number, value: string) => {
     }
     openSearch(index);
 };
-const selectProduct = (item: InvoiceItem, selected: ProductOption) => {
-    item.product_id = String(selected.id);
+const selectProduct = (item: InvoiceItem, selected: SearchProductOption) => {
+    item.product_id = selected.id === null ? "" : String(selected.id);
     item.product_name = selected.name;
     item.sku = selected.sku;
     item.unit = selected.unit;
@@ -108,7 +173,7 @@ const handleNameKeydown = (
 const total = (item: InvoiceItem) =>
     Number(item.selling_price || 0) * Number(item.quantity || 0);
 const sellingPriceIsInvalid = (item: InvoiceItem) =>
-    Number(item.selling_price || 0) <= Number(item.purchase_price || 0);
+    Number(item.selling_price || 0) < Number(item.purchase_price || 0);
 const touchSellingPrice = (index: number) => {
     touchedSellingPrices.value = new Set(touchedSellingPrices.value).add(index);
 };
@@ -134,7 +199,11 @@ const money = (v: number | string) =>
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="(item, index) in items" :key="index">
+                <tr
+                    v-for="(item, index) in items"
+                    :key="index"
+                    @focusin="emit('focus-item', index)"
+                >
                     <td class="min-w-80 align-top">
                         <div class="relative">
                             <input
@@ -161,7 +230,7 @@ const money = (v: number | string) =>
                             >
                                 <button
                                     v-for="(p, resultIndex) in filteredProducts(item)"
-                                    :key="p.id"
+                                    :key="`${p.source}-${p.id ?? p.name}-${p.unit}`"
                                     type="button"
                                     role="option"
                                     :aria-selected="activeResultIndex === resultIndex"
@@ -171,7 +240,17 @@ const money = (v: number | string) =>
                                     @mousedown.prevent="selectProduct(item, p)"
                                 >
                                     <span class="font-medium">{{ p.name }}</span>
-                                    <span class="text-xs text-slate-400">{{ p.unit }}</span>
+                                    <span class="text-right text-xs">
+                                        <span
+                                            v-if="p.source === 'customer_history'"
+                                            class="block font-semibold text-emerald-600"
+                                        >
+                                            Riwayat pelanggan
+                                        </span>
+                                        <span class="text-slate-400">
+                                            {{ p.unit }} · {{ money(p.selling_price) }}
+                                        </span>
+                                    </span>
                                 </button>
                                 <div
                                     v-if="!filteredProducts(item).length"
@@ -191,20 +270,22 @@ const money = (v: number | string) =>
                     <td v-if="canViewCost">
                         <CurrencyInput
                             v-model="item.purchase_price"
+                            :data-testid="`purchase-price-${index}`"
                             required
                         />
                     </td>
                     <td class="align-top">
                         <CurrencyInput
                             v-model="item.selling_price"
+                            :data-testid="`selling-price-${index}`"
                             required
                             @update:model-value="touchSellingPrice(index)"
                         />
                         <p
                             v-if="touchedSellingPrices.has(index) && sellingPriceIsInvalid(item)"
-                            class="mt-1 text-xs font-medium text-red-600"
+                            class="mt-1 text-xs font-medium text-amber-600"
                         >
-                            Harga jual harus lebih besar dari harga beli.
+                            Harga jual di bawah harga beli. Konfirmasi diperlukan saat menyimpan.
                         </p>
                     </td>
                     <td>
@@ -217,13 +298,19 @@ const money = (v: number | string) =>
                         />
                     </td>
                     <td>
-                        <span v-if="item.product_id">{{ item.unit }}</span>
-                        <AppInput
-                            v-else
+                        <AppSelect
                             v-model="item.unit"
-                            placeholder="Pcs"
+                            :data-testid="`invoice-unit-${index}`"
                             required
-                        />
+                        >
+                            <option
+                                v-for="unit in unitOptions(item)"
+                                :key="unit"
+                                :value="unit"
+                            >
+                                {{ unit }}
+                            </option>
+                        </AppSelect>
                     </td>
                     <td class="text-right font-semibold">
                         {{ money(total(item)) }}

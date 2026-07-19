@@ -5,6 +5,7 @@ const props = defineProps<{
     modelValue: string | number;
     required?: boolean;
     placeholder?: string;
+    dataTestid?: string;
 }>();
 const emit = defineEmits<{
     (e: "update:modelValue", value: string): void;
@@ -49,6 +50,7 @@ const updateValue = (event: Event) => {
             class="w-full rounded-lg border-slate-300 bg-white pl-10 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-sky-500 focus:ring-sky-500"
             :placeholder="placeholder ?? '0'"
             :required="required"
+            :data-testid="dataTestid"
             @input="updateValue"
         />
     </div>

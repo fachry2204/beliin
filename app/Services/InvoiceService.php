@@ -25,6 +25,7 @@ class InvoiceService
         private CashTransactionService $cash,
         private CombinedInvoiceService $combinedInvoices,
         private CourierPushService $courierPush,
+        private CustomerItemPriceHistoryService $customerItemPrices,
     ) {}
 
     public function create(array $data, int $userId): Invoice
@@ -39,7 +40,6 @@ class InvoiceService
                 $purchasePrice = isset($row['purchase_price']) && $row['purchase_price'] !== ''
                     ? $row['purchase_price']
                     : ($product?->average_purchase_price ?? 0);
-                $this->validateSellingPrice($row['selling_price'], $purchasePrice, $index);
                 $rows[] = array_merge($row, [
                     'product_id' => $product?->id,
                     'volume' => 1,
@@ -47,7 +47,7 @@ class InvoiceService
                     'purchase_price' => $purchasePrice,
                     'product_name_snapshot' => $product?->name ?? $row['product_name'],
                     'sku_snapshot' => $product?->sku ?? (($row['sku'] ?? null) ?: 'MANUAL'),
-                    'unit_snapshot' => $product?->unit ?? $row['unit'],
+                    'unit_snapshot' => $row['unit'] ?? $product?->unit ?? 'Pcs',
                 ]);
             }
             $data['items'] = $rows;
@@ -64,6 +64,7 @@ class InvoiceService
             foreach ($calculation['items'] as $row) {
                 $invoice->items()->create($row);
             }
+            $this->customerItemPrices->recordInvoice($invoice);
             $this->audit->record('create', 'invoice', $invoice, null, $invoice->fresh()->toArray());
             Cache::forget('dashboard.metrics');
 
@@ -90,8 +91,7 @@ class InvoiceService
             foreach ($data['items'] as $index => $row) {
                 $product = filled($row['product_id'] ?? null) ? Product::findOrFail($row['product_id']) : null;
                 $purchasePrice = isset($row['purchase_price']) && $row['purchase_price'] !== '' ? $row['purchase_price'] : ($product?->average_purchase_price ?? 0);
-                $this->validateSellingPrice($row['selling_price'], $purchasePrice, $index);
-                $rows[] = array_merge($row, ['product_id' => $product?->id, 'volume' => 1, 'calculation_method' => 'qty', 'purchase_price' => $purchasePrice, 'product_name_snapshot' => $product?->name ?? $row['product_name'], 'sku_snapshot' => $product?->sku ?? (($row['sku'] ?? null) ?: 'MANUAL'), 'unit_snapshot' => $product?->unit ?? $row['unit']]);
+                $rows[] = array_merge($row, ['product_id' => $product?->id, 'volume' => 1, 'calculation_method' => 'qty', 'purchase_price' => $purchasePrice, 'product_name_snapshot' => $product?->name ?? $row['product_name'], 'sku_snapshot' => $product?->sku ?? (($row['sku'] ?? null) ?: 'MANUAL'), 'unit_snapshot' => $row['unit'] ?? $product?->unit ?? 'Pcs']);
             }
             $old = $invoice->load('items')->toArray();
             $data['items'] = $rows;
@@ -107,6 +107,8 @@ class InvoiceService
             foreach ($calculation['items'] as $row) {
                 $invoice->items()->create($row);
             }
+            $invoice->unsetRelation('items');
+            $this->customerItemPrices->recordInvoice($invoice);
             if ($invoice->status !== InvoiceStatus::Draft) {
                 $this->syncCourierDelivery($invoice);
                 $this->cash->syncInvoiceShipping($invoice, $userId);
@@ -279,15 +281,6 @@ class InvoiceService
         }
 
         return $data;
-    }
-
-    private function validateSellingPrice(mixed $sellingPrice, mixed $purchasePrice, int $index): void
-    {
-        if (bccomp((string) $sellingPrice, (string) $purchasePrice, 2) <= 0) {
-            throw ValidationException::withMessages([
-                "items.$index.selling_price" => 'Harga jual harus lebih besar dari harga beli.',
-            ]);
-        }
     }
 
     private function statusAfterEdit(InvoiceStatus $previousStatus, string $paidAmount, string $remainingAmount, string $dueDate): InvoiceStatus

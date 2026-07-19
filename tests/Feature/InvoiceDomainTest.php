@@ -1083,7 +1083,7 @@ class InvoiceDomainTest extends TestCase
         app(InvoiceService::class)->updateDraft($updated->fresh(), $data, $this->admin->id);
     }
 
-    public function test_invoice_rejects_selling_price_equal_to_or_below_purchase_price(): void
+    public function test_invoice_allows_equal_or_lower_selling_price_after_interactive_confirmation(): void
     {
         $data = [
             'customer_id' => $this->customer->id,
@@ -1104,19 +1104,91 @@ class InvoiceDomainTest extends TestCase
             ]],
         ];
 
-        foreach ([75000, 70000] as $sellingPrice) {
-            $data['items'][0]['selling_price'] = $sellingPrice;
+        $equalPriceInvoice = app(InvoiceService::class)->create($data, $this->admin->id);
+        $this->assertSame('0.00', $equalPriceInvoice->gross_profit);
 
-            try {
-                app(InvoiceService::class)->create($data, $this->admin->id);
-                $this->fail('Invoice dengan harga jual yang tidak valid seharusnya ditolak.');
-            } catch (ValidationException $exception) {
-                $this->assertSame(
-                    'Harga jual harus lebih besar dari harga beli.',
-                    $exception->errors()['items.0.selling_price'][0],
-                );
-            }
-        }
+        $data['items'][0]['selling_price'] = 70000;
+        $data['items'][0]['quantity'] = 2;
+        $data['items'][0]['unit'] = 'Dus';
+        $lossInvoice = app(InvoiceService::class)->create($data, $this->admin->id);
+
+        $this->assertSame('-10000.00', $lossInvoice->gross_profit);
+        $this->assertSame('Dus', $lossInvoice->items->first()->unit_snapshot);
+    }
+
+    public function test_customer_item_price_history_is_saved_and_isolated_per_customer(): void
+    {
+        $otherCustomer = Customer::create([
+            'customer_code' => 'CUS-OTHER',
+            'name' => 'Pelanggan Lain',
+            'company_name' => 'PT Pelanggan Lain',
+            'is_active' => true,
+        ]);
+        $baseData = [
+            'courier_id' => $this->courier->id,
+            'invoice_date' => '2026-07-15',
+            'due_date' => '2026-07-22',
+            'discount_type' => 'nominal',
+            'discount_value' => 0,
+            'tax_percentage' => 0,
+            'shipping_cost' => 0,
+            'items' => [[
+                'product_id' => $this->product->id,
+                'product_name' => $this->product->name,
+                'unit' => 'Dus',
+                'purchase_price' => 75000,
+                'selling_price' => 90000,
+                'quantity' => 2,
+                'volume' => 1,
+                'calculation_method' => 'qty',
+            ]],
+        ];
+
+        $firstInvoice = app(InvoiceService::class)->create(
+            array_merge($baseData, ['customer_id' => $this->customer->id]),
+            $this->admin->id,
+        );
+        $otherData = $baseData;
+        $otherData['customer_id'] = $otherCustomer->id;
+        $otherData['items'][0]['unit'] = 'Pcs';
+        $otherData['items'][0]['purchase_price'] = 80000;
+        $otherData['items'][0]['selling_price'] = 125000;
+        app(InvoiceService::class)->create($otherData, $this->admin->id);
+
+        $this->assertDatabaseHas('customer_item_price_histories', [
+            'customer_id' => $this->customer->id,
+            'invoice_id' => $firstInvoice->id,
+            'product_id' => $this->product->id,
+            'unit' => 'Dus',
+            'purchase_price' => 75000,
+            'selling_price' => 90000,
+        ]);
+        $this->actingAs($this->admin)
+            ->getJson(route('customers.item-prices', $this->customer))
+            ->assertOk()
+            ->assertJsonPath('items.0.name', $this->product->name)
+            ->assertJsonPath('items.0.unit', 'Dus')
+            ->assertJsonPath('items.0.purchase_price', '75000.00')
+            ->assertJsonPath('items.0.selling_price', '90000.00');
+        $this->actingAs($this->admin)
+            ->getJson(route('customers.item-prices', $otherCustomer))
+            ->assertOk()
+            ->assertJsonPath('items.0.unit', 'Pcs')
+            ->assertJsonPath('items.0.purchase_price', '80000.00')
+            ->assertJsonPath('items.0.selling_price', '125000.00');
+
+        $baseData['customer_id'] = $this->customer->id;
+        $baseData['items'][0]['selling_price'] = 95000;
+        app(InvoiceService::class)->updateDraft($firstInvoice, $baseData, $this->admin->id);
+
+        $this->actingAs($this->admin)
+            ->getJson(route('customers.item-prices', $this->customer))
+            ->assertOk()
+            ->assertJsonPath('items.0.selling_price', '95000.00');
+        $this->actingAs($this->admin)
+            ->getJson(route('customers.item-prices', $otherCustomer))
+            ->assertOk()
+            ->assertJsonPath('items.0.selling_price', '125000.00');
     }
 
     public function test_empty_shipping_cost_is_normalized_to_zero_when_updating_invoice(): void
