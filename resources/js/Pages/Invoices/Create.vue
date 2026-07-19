@@ -88,6 +88,10 @@ const fresh = (): InvoiceItem => ({
     selling_price: "0",
     quantity: "1",
 });
+const normalizeQuantity = (value: string | number) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? String(numeric) : String(value ?? "");
+};
 const initial = props.invoice;
 const form = useForm<{
     customer_id: string;
@@ -128,7 +132,7 @@ const form = useForm<{
         unit: item.unit_snapshot ?? item.unit ?? "Pcs",
         purchase_price: String(item.purchase_price ?? 0),
         selling_price: String(item.selling_price),
-        quantity: String(item.quantity),
+        quantity: normalizeQuantity(item.quantity),
     })) ?? [fresh()],
 });
 watch(

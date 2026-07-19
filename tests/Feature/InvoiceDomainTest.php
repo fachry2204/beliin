@@ -31,6 +31,7 @@ use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -1218,6 +1219,41 @@ class InvoiceDomainTest extends TestCase
             ->assertRedirect(route('invoices.show', $invoice));
 
         $this->assertSame('0.00', $invoice->fresh()->shipping_cost);
+    }
+
+    public function test_invoice_can_be_updated_when_customer_price_history_migration_is_pending(): void
+    {
+        Schema::rename('customer_item_price_histories', 'customer_item_price_histories_pending');
+
+        try {
+            $invoice = $this->makeInvoice();
+
+            $this->actingAs($this->admin)
+                ->put(route('invoices.update', $invoice), [
+                    'customer_id' => $this->customer->id,
+                    'courier_id' => $this->courier->id,
+                    'invoice_date' => '2026-07-15',
+                    'due_date' => '2026-07-22',
+                    'discount_type' => 'nominal',
+                    'discount_value' => 0,
+                    'tax_percentage' => 0,
+                    'shipping_cost' => 0,
+                    'items' => [[
+                        'product_id' => $this->product->id,
+                        'product_name' => $this->product->name,
+                        'sku' => $this->product->sku,
+                        'unit' => $this->product->unit,
+                        'purchase_price' => 75000,
+                        'selling_price' => 100000,
+                        'quantity' => 2.5,
+                    ]],
+                ])
+                ->assertRedirect(route('invoices.show', $invoice));
+
+            $this->assertSame(2.5, $invoice->fresh()->items()->first()->quantity);
+        } finally {
+            Schema::rename('customer_item_price_histories_pending', 'customer_item_price_histories');
+        }
     }
 
     public function test_combined_invoice_is_created_manually_from_selected_outstanding_invoices(): void

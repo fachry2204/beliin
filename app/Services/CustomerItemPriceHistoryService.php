@@ -7,12 +7,17 @@ use App\Models\Customer;
 use App\Models\CustomerItemPriceHistory;
 use App\Models\Invoice;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class CustomerItemPriceHistoryService
 {
     public function recordInvoice(Invoice $invoice): void
     {
+        if (! $this->historyTableExists()) {
+            return;
+        }
+
         $invoice->loadMissing('items');
         CustomerItemPriceHistory::where('invoice_id', $invoice->id)->delete();
 
@@ -37,6 +42,10 @@ class CustomerItemPriceHistoryService
     /** @return Collection<int, array<string, mixed>> */
     public function latestForCustomer(Customer $customer, bool $includeCost): Collection
     {
+        if (! $this->historyTableExists()) {
+            return collect();
+        }
+
         return CustomerItemPriceHistory::query()
             ->where('customer_id', $customer->id)
             ->whereHas('invoice', fn ($query) => $query->where('status', '!=', InvoiceStatus::Cancelled->value))
@@ -56,6 +65,11 @@ class CustomerItemPriceHistoryService
                 'invoice_number' => $history->invoice?->invoice_number,
                 'invoice_date' => $history->invoice_date?->toDateString(),
             ]);
+    }
+
+    private function historyTableExists(): bool
+    {
+        return Schema::hasTable('customer_item_price_histories');
     }
 
     private function itemKey(?int $productId, string $productName): string
