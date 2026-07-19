@@ -113,7 +113,7 @@ class ReportController extends Controller
         $invoiceTotals = Invoice::query()
             ->join('combined_invoice_document_invoice as link', 'link.invoice_id', '=', 'invoices.id')
             ->whereIn('link.combined_invoice_document_id', $documentIds)
-            ->selectRaw('COUNT(*) as invoice_count, COALESCE(SUM(invoices.subtotal - invoices.discount_amount), 0) as sales_total, COALESCE(SUM(invoices.total_cost), 0) as cost_total, COALESCE(SUM(invoices.gross_profit), 0) as gross_margin_total')
+            ->selectRaw('COUNT(*) as invoice_count, COALESCE(SUM(invoices.subtotal - invoices.discount_amount), 0) as sales_total, COALESCE(SUM(invoices.total_cost), 0) as cost_total, COALESCE(SUM(invoices.gross_profit), 0) as gross_margin_total, COALESCE(SUM(invoices.shipping_cost), 0) as shipping_total')
             ->first();
         $commissionTotal = (float) CombinedInvoiceDocument::query()
             ->whereIn('id', $documentIds)
@@ -121,6 +121,8 @@ class ReportController extends Controller
             ->get()
             ->sum('commission_total');
         $grossMarginTotal = (float) $invoiceTotals->gross_margin_total;
+        $factureShippingTotal = (float) (clone $query)->sum('shipping_cost');
+        $shippingTotal = (float) $invoiceTotals->shipping_total + $factureShippingTotal;
         $summary = [
             'facture_count' => $documentIds->count(),
             'invoice_count' => (int) $invoiceTotals->invoice_count,
@@ -128,7 +130,8 @@ class ReportController extends Controller
             'cost_total' => (string) $invoiceTotals->cost_total,
             'gross_margin_total' => (string) $grossMarginTotal,
             'commission_total' => (string) $commissionTotal,
-            'net_margin_total' => (string) ($grossMarginTotal - $commissionTotal),
+            'shipping_total' => (string) $shippingTotal,
+            'net_margin_total' => (string) ($grossMarginTotal - $commissionTotal - $shippingTotal),
         ];
         $rows = $query
             ->with('customer:id,name,company_name')
@@ -137,11 +140,16 @@ class ReportController extends Controller
             ->withSum('invoices as discount_total', 'discount_amount')
             ->withSum('invoices as cost_total', 'total_cost')
             ->withSum('invoices as gross_margin_total', 'gross_profit')
+            ->withSum('invoices as shipping_total', 'shipping_cost')
             ->withSum('commissions as commission_total', 'commission_amount')
             ->latest('opened_at')
             ->latest('id')
             ->paginate(15)
             ->withQueryString();
+        $rows->getCollection()->each(function (CombinedInvoiceDocument $document) {
+            $shippingTotal = (float) $document->shipping_total + (float) $document->shipping_cost;
+            $document->shipping_total = fmod($shippingTotal, 1.0) === 0.0 ? (int) $shippingTotal : $shippingTotal;
+        });
 
         return Inertia::render('Reports/Margins', [
             'summary' => $summary,

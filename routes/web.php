@@ -19,6 +19,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\WebPushSubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/manifest.webmanifest', AppManifestController::class)->name('app.manifest');
@@ -110,6 +111,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('earnings', [CourierPortalController::class, 'earnings'])->name('earnings.index');
         Route::get('profile', [CourierPortalController::class, 'profile'])->name('profile.edit');
         Route::patch('profile', [CourierPortalController::class, 'updateProfile'])->name('profile.update');
+        Route::post('push-subscriptions', [WebPushSubscriptionController::class, 'store'])->name('push-subscriptions.store');
+        Route::delete('push-subscriptions', [WebPushSubscriptionController::class, 'destroy'])->name('push-subscriptions.destroy');
     });
 });
 

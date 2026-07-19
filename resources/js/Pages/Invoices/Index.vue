@@ -21,6 +21,7 @@ interface Row {
     paid_amount: string;
     remaining_amount: string;
     status: string | { value: string };
+    delivery?: { status: string } | null;
     customer: { name: string; company_name?: string };
 }
 interface Page {
@@ -65,6 +66,28 @@ const marginRate = (row: Row) => {
 };
 const statusValue = (value: Row["status"]) =>
     typeof value === "string" ? value : value.value;
+const courierStatusLabel = (delivery?: Row["delivery"]) => {
+    if (!delivery) return "Belum Ditugaskan";
+
+    return {
+        pending: "Tugas Belum Diambil",
+        accepted: "Tugas Diambil",
+        in_transit: "Dalam Pengantaran",
+        delivered: "Selesai",
+        cancelled: "Dibatalkan",
+    }[delivery.status] ?? delivery.status.replaceAll("_", " ");
+};
+const courierStatusClass = (delivery?: Row["delivery"]) => {
+    if (!delivery) return "bg-slate-100 text-slate-600";
+    if (delivery.status === "delivered")
+        return "bg-emerald-100 text-emerald-700";
+    if (delivery.status === "in_transit")
+        return "bg-amber-100 text-amber-700";
+    if (delivery.status === "cancelled") return "bg-red-100 text-red-700";
+    if (delivery.status === "accepted") return "bg-sky-100 text-sky-700";
+
+    return "bg-violet-100 text-violet-700";
+};
 </script>
 
 <template>
@@ -156,6 +179,15 @@ const statusValue = (value: Row["status"]) =>
                                 <StatusBadge
                                     :status="statusValue(row.status)"
                                 />
+                                <div class="mt-2">
+                                    <span
+                                        class="inline-flex rounded-md px-2 py-1 text-[10px] font-semibold"
+                                        :class="courierStatusClass(row.delivery)"
+                                    >
+                                        Kurir:
+                                        {{ courierStatusLabel(row.delivery) }}
+                                    </span>
+                                </div>
                             </td>
                             <td>
                                 <div class="flex gap-1">

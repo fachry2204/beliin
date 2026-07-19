@@ -58,6 +58,8 @@ interface Document {
     opened_at: string;
     due_date?: string | null;
     status: string;
+    courier_name?: string | null;
+    shipping_cost?: string | number;
 }
 const props = defineProps<{
     document: Document;
@@ -252,7 +254,7 @@ const commissionWarning = computed(
         </div>
 
         <section class="panel mb-5 p-5">
-            <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
                 <div>
                     <span class="label">Nomor Faktur</span
                     ><strong class="block text-lg text-sky-700">{{
@@ -274,6 +276,11 @@ const commissionWarning = computed(
                 <div>
                     <span class="label">Alamat</span>
                     <p>{{ customer.address || "-" }}</p>
+                </div>
+                <div>
+                    <span class="label">Driver & Ongkir</span>
+                    <strong class="block">{{ document.courier_name || "-" }}</strong>
+                    <span class="text-sm text-slate-500">{{ money(document.shipping_cost || 0) }}</span>
                 </div>
                 <div class="rounded-xl border border-slate-200 p-4">
                     <span class="label">Tanggal Jatuh Tempo</span

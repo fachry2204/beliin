@@ -19,11 +19,10 @@ th { padding: 4px; border: 1px solid #000; background: #fff; color: #000; font-s
 td { padding: 4px; border: 1px solid #000; font-size: 7.5pt; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
 .num { text-align: right; }
 .after { display: table; width: 100%; margin-top: 8px; table-layout: fixed; }
-.notes, .totals-cell { display: table-cell; vertical-align: top; }
-.notes { width: 50%; padding: 6px; border: 1px solid #000; background: #fff; line-height: 1.35; }
-.notes h3 { margin: 0 0 3px; color: #000; font-size: 7.5pt; }
-.notes p { margin: 0 0 6px; }
-.notes p:last-child { margin-bottom: 0; }
+.terms, .totals-cell { display: table-cell; vertical-align: top; }
+.terms { width: 50%; padding: 6px; border: 1px solid #000; background: #fff; line-height: 1.35; }
+.terms h3 { margin: 0 0 3px; color: #000; font-size: 7.5pt; }
+.terms p { margin: 0; }
 .totals-cell { width: 50%; padding-left: 8px; }
 .totals td { font-weight: bold; }
 .grand td { border-top-width: 2px; color: #000; font-size: 9pt; }
@@ -39,9 +38,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height:
 .invoice-table th { height: auto; padding: 3px 4px; font-size: 8.5pt; line-height: 1.2; vertical-align: middle; overflow: visible; }
 .invoice-table td { height: auto; padding: 3.5px 4px; font-size: 9pt; line-height: 1.25; vertical-align: middle; overflow: visible; }
 .after { margin-top: 7px; }
-.notes { padding: 6px; font-size: 8.5pt; line-height: 1.35; overflow: visible; }
-.notes h3 { font-size: 9pt; line-height: 1.3; }
-.notes p { margin-bottom: 6px; }
+.terms { padding: 6px; font-size: 8.5pt; line-height: 1.35; overflow: visible; }
+.terms h3 { font-size: 9pt; line-height: 1.3; }
 .totals-cell { padding-left: 7px; }
 .totals td { padding: 4px; font-size: 8.5pt; line-height: 1.3; overflow: visible; }
 .grand td { font-size: 10.5pt; }
@@ -60,7 +58,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height:
 @foreach($invoices as $invoice)<tr><td>{{ $loop->iteration }}</td><td>{{ $invoice->invoice_number }}</td><td>{{ $invoice->purchase_order_number ?: '-' }}</td><td>{{ $invoice->invoice_date->format('d/m/Y') }}</td><td class="num">{{ number_format((float)$invoice->grand_total,0,',','.') }}</td><td class="num">{{ number_format((float)$invoice->paid_amount,0,',','.') }}</td><td class="num">{{ number_format((float)$invoice->remaining_amount,0,',','.') }}</td></tr>@endforeach
 </tbody></table>
 <div class="after">
-<section class="notes"><h3>Catatan</h3><p>@forelse($invoices->filter(fn ($invoice) => filled($invoice->notes)) as $invoice)<strong>{{ $invoice->invoice_number }}:</strong> {{ $invoice->notes }}@unless($loop->last)<br>@endunless @empty-@endforelse</p><h3>Syarat pembayaran</h3><p>@if($document->due_date)Pembayaran jatuh tempo tanggal {{ $document->due_date->format('d/m/Y') }}.<br>@endif Pembayaran Melalui Transfer:<br><strong>Bank: {{ $company?->bank_name ?: '-' }} | No Rekening: {{ $company?->bank_account_number ?: '-' }}<br>Atas Nama Rekening: {{ $company?->bank_account_name ?: '-' }}</strong></p></section>
+<section class="terms"><h3>Syarat pembayaran</h3><p>@if($document->due_date)Pembayaran jatuh tempo tanggal {{ $document->due_date->format('d/m/Y') }}.<br>@endif Pembayaran Melalui Transfer:<br><strong>Bank: {{ $company?->bank_name ?: '-' }} | No Rekening: {{ $company?->bank_account_number ?: '-' }}<br>Atas Nama Rekening: {{ $company?->bank_account_name ?: '-' }}</strong></p></section>
 <div class="totals-cell"><table class="totals"><tr><td>Total Tagihan</td><td class="num">Rp {{ number_format((float)$totals['grand_total'],0,',','.') }}</td></tr><tr><td>Total Terbayar</td><td class="num">Rp {{ number_format((float)$totals['paid_total'],0,',','.') }}</td></tr><tr class="grand"><td>TOTAL SISA</td><td class="num">Rp {{ number_format((float)$totals['remaining_total'],0,',','.') }}</td></tr></table></div>
 </div>
 </div>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CashTransaction;
 use App\Models\CashTransactionSequence;
+use App\Models\CombinedInvoiceDocument;
 use App\Models\CourierShippingDeposit;
 use App\Models\FactureCommission;
 use App\Models\Invoice;
@@ -34,7 +35,7 @@ class CashTransactionService
 
     public function update(CashTransaction $transaction, array $data, int $userId): CashTransaction
     {
-        abort_if($transaction->payment_id || $transaction->invoice_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat diubah manual.');
+        abort_if($transaction->payment_id || $transaction->invoice_id || $transaction->combined_invoice_document_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat diubah manual.');
         $old = $transaction->toArray();
         $transaction->update([...$data, 'updated_by' => $userId]);
         $this->audit->record('update', 'cash_transaction', $transaction, $old, $transaction->fresh()->toArray());
@@ -44,7 +45,7 @@ class CashTransactionService
 
     public function delete(CashTransaction $transaction): void
     {
-        abort_if($transaction->payment_id || $transaction->invoice_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat dihapus manual.');
+        abort_if($transaction->payment_id || $transaction->invoice_id || $transaction->combined_invoice_document_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat dihapus manual.');
         $old = $transaction->toArray();
         $transaction->delete();
         $this->audit->record('delete', 'cash_transaction', $transaction, $old);
@@ -58,14 +59,14 @@ class CashTransactionService
                 return $existing;
             }
 
-            $payment->loadMissing('invoice');
+            $payment->loadMissing(['invoice', 'combinedInvoice']);
             $transaction = CashTransaction::create([
                 'payment_id' => $payment->id,
                 'transaction_number' => $this->nextNumber('in', $payment->payment_date),
                 'type' => 'in',
                 'transaction_date' => $payment->payment_date->toDateString(),
                 'category' => 'Pembayaran Invoice',
-                'description' => "Pembayaran {$payment->invoice->invoice_number} - {$payment->invoice->billing_name}",
+                'description' => $this->paymentDescription($payment),
                 'payment_method' => $payment->payment_method,
                 'amount' => $payment->amount,
                 'reference_number' => $payment->reference_number ?: $payment->payment_number,
@@ -81,7 +82,7 @@ class CashTransactionService
     public function syncFromPayment(Payment $payment, int $userId): CashTransaction
     {
         return DB::transaction(function () use ($payment, $userId) {
-            $payment->loadMissing('invoice');
+            $payment->loadMissing(['invoice', 'combinedInvoice']);
             $transaction = CashTransaction::withTrashed()->where('payment_id', $payment->id)->first();
 
             if (! $transaction) {
@@ -94,7 +95,7 @@ class CashTransactionService
             }
             $transaction->update([
                 'transaction_date' => $payment->payment_date,
-                'description' => "Pembayaran {$payment->invoice->invoice_number} - {$payment->invoice->billing_name}",
+                'description' => $this->paymentDescription($payment),
                 'payment_method' => $payment->payment_method,
                 'amount' => $payment->amount,
                 'reference_number' => $payment->reference_number ?: $payment->payment_number,
@@ -125,6 +126,15 @@ class CashTransactionService
         $this->audit->record('update', 'cash_transaction', $transaction, $old, $transaction->fresh()->toArray());
 
         return $transaction->fresh();
+    }
+
+    private function paymentDescription(Payment $payment): string
+    {
+        if ($payment->combinedInvoice) {
+            return "Pembayaran Faktur {$payment->combinedInvoice->facture_number} | Invoice {$payment->invoice->invoice_number} - {$payment->invoice->billing_name}";
+        }
+
+        return "Pembayaran {$payment->invoice->invoice_number} - {$payment->invoice->billing_name}";
     }
 
     public function deleteFactureCommissionCash(CashTransaction $transaction): void
@@ -190,8 +200,8 @@ class CashTransactionService
             $data = [
                 'type' => 'out',
                 'transaction_date' => today()->toDateString(),
-                'category' => 'Ongkos Kirim Invoice',
-                'description' => "Ongkos kirim {$invoice->invoice_number} - {$invoice->billing_name}",
+                'category' => 'Ongkir Driver',
+                'description' => "Ongkir driver {$invoice->invoice_number} - {$invoice->billing_name}",
                 'payment_method' => 'cash',
                 'amount' => $invoice->shipping_cost,
                 'reference_number' => $invoice->invoice_number,
@@ -225,6 +235,65 @@ class CashTransactionService
             ]);
 
             return $transaction->fresh();
+        });
+    }
+
+    public function syncFactureShipping(CombinedInvoiceDocument $document, int $userId): ?CashTransaction
+    {
+        return DB::transaction(function () use ($document, $userId) {
+            $transaction = CashTransaction::withTrashed()
+                ->where('combined_invoice_document_id', $document->id)
+                ->first();
+
+            if (bccomp((string) $document->shipping_cost, '0', 2) <= 0) {
+                if ($transaction && ! $transaction->trashed()) {
+                    $old = $transaction->toArray();
+                    $transaction->delete();
+                    $this->audit->record('delete', 'cash_transaction', $transaction, $old);
+                }
+
+                return null;
+            }
+
+            if (! $document->courier_id) {
+                throw ValidationException::withMessages([
+                    'courier_id' => 'Driver wajib dipilih jika ongkir lebih dari nol.',
+                ]);
+            }
+
+            $document->loadMissing(['customer', 'courier']);
+            $data = [
+                'type' => 'out',
+                'transaction_date' => $document->opened_at->toDateString(),
+                'category' => 'Ongkir Driver',
+                'description' => "Ongkir driver {$document->facture_number} - ".($document->customer->company_name ?: $document->customer->name),
+                'payment_method' => 'cash',
+                'amount' => $document->shipping_cost,
+                'reference_number' => $document->facture_number,
+                'notes' => $document->courier_name ? "Driver: {$document->courier_name}" : null,
+                'updated_by' => $userId,
+            ];
+
+            if ($transaction) {
+                $old = $transaction->toArray();
+                if ($transaction->trashed()) {
+                    $transaction->restore();
+                }
+                $transaction->update($data);
+                $this->audit->record('update', 'cash_transaction', $transaction, $old, $transaction->fresh()->toArray());
+
+                return $transaction->fresh();
+            }
+
+            $transaction = CashTransaction::create([
+                ...$data,
+                'combined_invoice_document_id' => $document->id,
+                'transaction_number' => $this->nextNumber('out', $document->opened_at),
+                'created_by' => $userId,
+            ]);
+            $this->audit->record('create', 'cash_transaction', $transaction, null, $transaction->toArray());
+
+            return $transaction;
         });
     }
 

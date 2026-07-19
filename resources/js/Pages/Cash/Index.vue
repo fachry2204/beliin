@@ -16,6 +16,7 @@ interface CashRow {
     id: number;
     payment_id?: number;
     invoice_id?: number;
+    combined_invoice_document_id?: number;
     facture_commission_exists?: boolean;
     transaction_number: string;
     transaction_date: string;
@@ -89,6 +90,10 @@ const method = (value: string) =>
         virtual_account: "Virtual Account",
         other: "Lainnya",
     })[value] ?? value;
+const category = (row: CashRow) =>
+    row.invoice_id || row.combined_invoice_document_id
+        ? "Ongkir Driver"
+        : row.category;
 
 const openCreate = () => {
     editingId.value = null;
@@ -209,12 +214,13 @@ const remove = (row: CashRow) => {
                             </td>
                             <td>{{ date(row.transaction_date) }}</td>
                             <td>
-                                <div>{{ row.category }}</div>
+                                <div>{{ category(row) }}</div>
                                 <span
                                     class="mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-semibold"
                                     :class="
                                         row.payment_id ||
                                         row.invoice_id ||
+                                        row.combined_invoice_document_id ||
                                         row.facture_commission_exists
                                             ? 'bg-emerald-100 text-emerald-700'
                                             : 'bg-slate-100 text-slate-600'
@@ -223,7 +229,9 @@ const remove = (row: CashRow) => {
                                         row.payment_id
                                             ? "Pembayaran Invoice"
                                             : row.invoice_id
-                                              ? "Ongkos Kirim Invoice"
+                                              ? "Ongkir Driver"
+                                              : row.combined_invoice_document_id
+                                                ? "Ongkir Driver Faktur"
                                               : row.facture_commission_exists
                                                 ? "Komisi Faktur"
                                                 : "Input Manual"
@@ -254,6 +262,7 @@ const remove = (row: CashRow) => {
                                     v-if="
                                         !row.payment_id &&
                                         !row.invoice_id &&
+                                        !row.combined_invoice_document_id &&
                                         !row.facture_commission_exists
                                     "
                                     class="flex justify-end gap-2"

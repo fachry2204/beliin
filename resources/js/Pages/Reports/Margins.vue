@@ -17,6 +17,7 @@ interface Row {
     cost_total: string | null;
     gross_margin_total: string | null;
     commission_total: string | null;
+    shipping_total: string | null;
 }
 interface PageData {
     data: Row[];
@@ -32,6 +33,7 @@ interface Summary {
     cost_total: string;
     gross_margin_total: string;
     commission_total: string;
+    shipping_total: string;
     net_margin_total: string;
 }
 defineProps<{
@@ -57,12 +59,12 @@ const date = (v: string) =>
         ><template #breadcrumb>Laporan / Margin</template
         ><ReportPageHeader
             title="Laporan Margin"
-            description="Analisis penjualan, harga pokok, komisi Faktur, dan margin bersih." /><ReportFilters
+            description="Analisis penjualan, harga pokok, ongkir, komisi Faktur, dan margin bersih." /><ReportFilters
             route-name="reports.margins"
             :filters="filters"
             search-placeholder="Cari nomor faktur, invoice, atau pelanggan..." />
         <div
-            class="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
+            class="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
         >
             <ReportStatCard
                 label="Jumlah Faktur"
@@ -89,6 +91,11 @@ const date = (v: string) =>
                 tone="amber"
                 icon="cash"
             /><ReportStatCard
+                label="Total Ongkir"
+                :value="money(summary.shipping_total)"
+                tone="amber"
+                icon="cash"
+            /><ReportStatCard
                 label="Total Margin Bersih"
                 :value="money(summary.net_margin_total)"
                 :detail="rate(summary.net_margin_total, summary.sales_total)"
@@ -98,7 +105,7 @@ const date = (v: string) =>
         </div>
         <section class="panel">
             <div class="table-wrap">
-                <table class="data-table min-w-[1100px]">
+                <table class="data-table min-w-[1200px]">
                     <thead>
                         <tr>
                             <th>Tanggal Faktur</th>
@@ -108,6 +115,7 @@ const date = (v: string) =>
                             <th class="text-right">Harga Pokok</th>
                             <th class="text-right">Margin Kotor</th>
                             <th class="text-right">Komisi</th>
+                            <th class="text-right">Ongkir</th>
                             <th class="text-right">Margin Bersih</th>
                         </tr>
                     </thead>
@@ -155,12 +163,16 @@ const date = (v: string) =>
                             <td class="text-right font-semibold text-amber-600">
                                 {{ money(row.commission_total ?? 0) }}
                             </td>
+                            <td class="text-right font-semibold text-red-600">
+                                {{ money(row.shipping_total ?? 0) }}
+                            </td>
                             <td class="text-right">
                                 <div class="font-semibold text-emerald-600">
                                     {{
                                         money(
                                             Number(row.gross_margin_total) -
-                                                Number(row.commission_total),
+                                                Number(row.commission_total) -
+                                                Number(row.shipping_total),
                                         )
                                     }}
                                 </div>
@@ -168,7 +180,8 @@ const date = (v: string) =>
                                     {{
                                         rate(
                                             Number(row.gross_margin_total) -
-                                                Number(row.commission_total),
+                                                Number(row.commission_total) -
+                                                Number(row.shipping_total),
                                             Number(row.subtotal_total) -
                                                 Number(row.discount_total),
                                         )
@@ -178,7 +191,7 @@ const date = (v: string) =>
                         </tr>
                         <tr v-if="!rows.data.length">
                             <td
-                                colspan="8"
+                                colspan="9"
                                 class="py-12 text-center text-slate-500"
                             >
                                 Tidak ada data margin sesuai filter.

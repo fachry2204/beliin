@@ -159,8 +159,13 @@ class InvoiceDomainTest extends TestCase
     public function test_report_center_and_each_report_support_search_and_date_filters(): void
     {
         $invoice = $this->makeInvoice();
-        $invoice->update(['status' => InvoiceStatus::Unpaid, 'issued_at' => now()]);
-        $facture = app(CombinedInvoiceService::class)->create($this->customer, [$invoice->id], '2026-07-24');
+        $invoice->update([
+            'status' => InvoiceStatus::Unpaid,
+            'issued_at' => now(),
+            'shipping_cost' => 50000,
+        ]);
+        $facture = app(CombinedInvoiceService::class)->create($this->customer, [$invoice->id], '2026-07-24', null, 0, $this->admin->id);
+        $factureDate = $facture->opened_at->toDateString();
         FactureCommission::create([
             'combined_invoice_document_id' => $facture->id,
             'facture_payment_date' => '2026-07-15',
@@ -208,8 +213,8 @@ class InvoiceDomainTest extends TestCase
                 ->where('filters.search', $invoice->invoice_number));
 
         $this->get(route('reports.combined-invoices', [
-            'date_from' => '2026-07-17',
-            'date_to' => '2026-07-17',
+            'date_from' => $factureDate,
+            'date_to' => $factureDate,
             'search' => $facture->facture_number,
         ]))
             ->assertOk()
@@ -231,8 +236,8 @@ class InvoiceDomainTest extends TestCase
             ->where('summary.incoming_total', 500000));
 
         $this->get(route('reports.margins', [
-            'date_from' => '2026-07-17',
-            'date_to' => '2026-07-17',
+            'date_from' => $factureDate,
+            'date_to' => $factureDate,
             'search' => $facture->facture_number,
         ]))
             ->assertOk()
@@ -243,10 +248,12 @@ class InvoiceDomainTest extends TestCase
                 ->where('rows.data.0.facture_number', $facture->facture_number)
                 ->where('rows.data.0.gross_margin_total', 250000)
                 ->where('rows.data.0.commission_total', 25000)
+                ->where('rows.data.0.shipping_total', 50000)
                 ->where('summary.facture_count', 1)
                 ->where('summary.gross_margin_total', '250000')
                 ->where('summary.commission_total', '25000')
-                ->where('summary.net_margin_total', '225000'));
+                ->where('summary.shipping_total', '50000')
+                ->where('summary.net_margin_total', '175000'));
 
         $limitedUser = User::factory()->create(['email_verified_at' => now(), 'is_active' => true]);
         $limitedUser->givePermissionTo('reports.view');
@@ -259,13 +266,19 @@ class InvoiceDomainTest extends TestCase
 
     public function test_invoice_index_shows_margin_only_to_users_with_profit_permission(): void
     {
-        $this->makeInvoice();
+        $invoice = $this->makeInvoice();
+        CourierDelivery::create([
+            'invoice_id' => $invoice->id,
+            'courier_id' => $this->courier->id,
+            'status' => CourierDelivery::IN_TRANSIT,
+        ]);
 
         $this->actingAs($this->admin)->get(route('invoices.index'))->assertOk()->assertInertia(
             fn (Assert $page) => $page
                 ->component('Invoices/Index')
                 ->where('canViewProfit', true)
                 ->where('rows.data.0.gross_profit', '250000.00')
+                ->where('rows.data.0.delivery.status', CourierDelivery::IN_TRANSIT)
         );
 
         $staff = User::factory()->create(['email_verified_at' => now()]);
@@ -441,7 +454,7 @@ class InvoiceDomainTest extends TestCase
         $shippingCash = CashTransaction::where('invoice_id', $invoice->id)->firstOrFail();
         $this->assertSame('out', $shippingCash->type);
         $this->assertSame('150000.00', $shippingCash->amount);
-        $this->assertSame('Ongkos Kirim Invoice', $shippingCash->category);
+        $this->assertSame('Ongkir Driver', $shippingCash->category);
         $this->assertNotNull($deposit->fresh()->paid_at);
 
         $this->get(route('couriers.show', $this->courier))->assertOk()->assertInertia(
@@ -1031,7 +1044,8 @@ class InvoiceDomainTest extends TestCase
                 ->component('CombinedInvoices/Create')
                 ->has('customers', 1)
                 ->has('customers.0.invoices', 2)
-                ->where('defaultDueDate', '2026-07-24')
+                ->has('couriers', 1)
+                ->where('defaultDueDate', now()->addWeek()->toDateString())
         );
 
         $this->post(route('combined-invoices.store'), [
@@ -1039,10 +1053,21 @@ class InvoiceDomainTest extends TestCase
             'invoice_ids' => [$unpaid->id, $partial->id],
             'use_due_date' => true,
             'due_date' => '2026-07-24',
+            'courier_id' => $this->courier->id,
+            'shipping_cost' => 50000,
         ])->assertRedirect();
         $document = CombinedInvoiceDocument::firstOrFail();
         $this->assertMatchesRegularExpression('#^FKT/2026/07/\d{5}$#', $document->facture_number);
         $this->assertSame('2026-07-24', $document->due_date->toDateString());
+        $this->assertSame($this->courier->id, $document->courier_id);
+        $this->assertSame('50000.00', $document->shipping_cost);
+        $this->assertDatabaseHas('cash_transactions', [
+            'combined_invoice_document_id' => $document->id,
+            'type' => 'out',
+            'category' => 'Ongkir Driver',
+            'amount' => 50000,
+            'reference_number' => $document->facture_number,
+        ]);
         $this->assertCount(2, $document->invoices);
 
         $this->get(route('combined-invoices.show', $document))
@@ -1055,10 +1080,13 @@ class InvoiceDomainTest extends TestCase
                 ->where('canViewProfit', true)
                 ->where('totals.remaining_total', '1600000')
                 ->where('document.due_date', '2026-07-24')
+                ->where('document.courier_name', $this->courier->name)
+                ->where('document.shipping_cost', '50000.00')
                 ->where('canEditDueDate', true)
                 ->where('canEdit', true)
                 ->where('canDelete', true)
                 ->where('deletionLocked', false)
+                ->missing('invoices.0.notes')
                 ->where('totals.gross_profit_total', '500000')
                 ->where('totals.profit_base_total', '2000000'));
 
@@ -1075,8 +1103,14 @@ class InvoiceDomainTest extends TestCase
             'invoice_ids' => [$unpaid->id, $partial->id],
             'use_due_date' => true,
             'due_date' => '2026-07-29',
+            'courier_id' => $this->courier->id,
+            'shipping_cost' => 75000,
         ])->assertRedirect(route('combined-invoices.show', $document));
         $this->assertSame('2026-07-29', $document->fresh()->due_date->toDateString());
+        $this->assertDatabaseHas('cash_transactions', [
+            'combined_invoice_document_id' => $document->id,
+            'amount' => 75000,
+        ]);
 
         $this->put(route('combined-invoices.due-date.update', $document), [
             'use_due_date' => false,
@@ -1094,8 +1128,8 @@ class InvoiceDomainTest extends TestCase
             ->assertSee($unpaid->invoice_number)
             ->assertSee($partial->invoice_number)
             ->assertDontSee($paid->invoice_number)
-            ->assertSee('Catatan')
-            ->assertSee('Catatan faktur gabungan')
+            ->assertDontSee('Catatan')
+            ->assertDontSee('Catatan faktur gabungan')
             ->assertSee('Syarat pembayaran')
             ->assertSee('Nomor Faktur')
             ->assertSee('30/07/2026')
@@ -1198,6 +1232,9 @@ class InvoiceDomainTest extends TestCase
             'combined_invoice_document_id' => $document->id,
             'notes' => 'Pembayaran Faktur '.$document->facture_number.'. Pembayaran pertama',
         ]);
+        $this->assertSame(2, CashTransaction::query()
+            ->where('description', 'like', "Pembayaran Faktur {$document->facture_number} | Invoice %")
+            ->count());
         $this->assertDatabaseHas('facture_commissions', [
             'combined_invoice_document_id' => $document->id,
             'commission_base' => 'margin',
@@ -1361,10 +1398,11 @@ class InvoiceDomainTest extends TestCase
             ->assertDontSee('Email:')
             ->assertDontSee('NPWP:')
             ->assertSee('<span class="invoice-heading-label">INVOICE</span>', false)
-            ->assertSee('No. PO :')
-            ->assertSee('| Tanggal :')
-            ->assertSee('| No Invoice :')
-            ->assertDontSee('Tanggal Invoice :')
+            ->assertSee('Tanggal Invoice :')
+            ->assertSee('No Invoice :')
+            ->assertSee('No PO :')
+            ->assertDontSee('| Tanggal :')
+            ->assertDontSee('| No Invoice :')
             ->assertDontSee('Tanggal Jatuh Tempo :')
             ->assertDontSee('Status:')
             ->assertDontSee('Catatan')
@@ -1402,15 +1440,15 @@ class InvoiceDomainTest extends TestCase
             ->assertSee('body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.4;', false)
             ->assertSee('.print-sheet { width: 100%; max-width: 100%; overflow: visible; }', false)
             ->assertSee('.print-sheet { padding-top: 5mm; }', false)
-            ->assertSee('.details { margin: 7mm 0 9px; }', false)
+            ->assertSee('.details { margin: 10mm 0 9px; }', false)
             ->assertSee('.items-table td { height: auto; padding: 4.5px 5px; font-size: 10pt; line-height: 1.35;', false)
             ->assertSee('.items-table thead th { text-align: center; }', false)
             ->assertSee('border: 1px solid #000;', false)
             ->assertSee('<span class="invoice-heading-label">INVOICE</span>', false)
-            ->assertSee('<span class="invoice-heading-meta"> | Tanggal :', false)
-            ->assertSee('| No Invoice :', false)
-            ->assertSee('<div class="invoice-po">No. PO :', false)
-            ->assertDontSee('| No. PO :', false)
+            ->assertSee('<span class="invoice-meta-label">Tanggal Invoice :</span>', false)
+            ->assertSee('<span class="invoice-meta-label">No Invoice :</span>', false)
+            ->assertSee('<span class="invoice-meta-label">No PO :</span>', false)
+            ->assertDontSee('| No PO :', false)
             ->assertDontSee('background: #0369a1;', false);
     }
 

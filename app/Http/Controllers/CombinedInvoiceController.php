@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Models\CombinedInvoiceDocument;
 use App\Models\CompanySetting;
 use App\Models\Customer;
+use App\Models\Courier;
 use App\Models\FactureCommission;
 use App\Models\Payment;
 use App\Services\CombinedInvoiceService;
@@ -74,6 +75,7 @@ class CombinedInvoiceController extends Controller
 
         return Inertia::render('CombinedInvoices/Create', [
             'customers' => $customers,
+            'couriers' => Courier::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'vehicle_type', 'license_plate']),
             'today' => today()->toDateString(),
             'defaultDueDate' => today()->addWeek()->toDateString(),
         ]);
@@ -88,6 +90,8 @@ class CombinedInvoiceController extends Controller
             'invoice_ids.*' => ['required', 'integer', 'distinct', 'exists:invoices,id'],
             'use_due_date' => ['required', 'boolean'],
             'due_date' => ['nullable', 'required_if:use_due_date,true', 'date', 'after_or_equal:today'],
+            'courier_id' => [Rule::requiredIf((float) $request->input('shipping_cost', 0) > 0), 'nullable', 'integer', 'exists:couriers,id'],
+            'shipping_cost' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $customer = Customer::findOrFail($data['customer_id']);
@@ -104,6 +108,9 @@ class CombinedInvoiceController extends Controller
             $customer,
             $eligibleIds->all(),
             $data['use_due_date'] ? $data['due_date'] : null,
+            filled($data['courier_id'] ?? null) ? (int) $data['courier_id'] : null,
+            $data['shipping_cost'] ?? 0,
+            $request->user()->id,
         );
 
         return redirect()->route('combined-invoices.show', $document)
@@ -153,12 +160,17 @@ class CombinedInvoiceController extends Controller
             ]],
             'today' => today()->toDateString(),
             'defaultDueDate' => today()->addWeek()->toDateString(),
+            'couriers' => Courier::withTrashed()
+                ->where(fn (Builder $query) => $query->where('is_active', true)->orWhere('id', $combinedInvoice->courier_id))
+                ->orderBy('name')->get(['id', 'name', 'vehicle_type', 'license_plate', 'deleted_at']),
             'document' => [
                 'id' => $combinedInvoice->id,
                 'facture_number' => $combinedInvoice->facture_number,
                 'customer_id' => $combinedInvoice->customer_id,
                 'invoice_ids' => $combinedInvoice->invoices()->pluck('invoices.id'),
                 'due_date' => $combinedInvoice->due_date?->toDateString(),
+                'courier_id' => $combinedInvoice->courier_id,
+                'shipping_cost' => $combinedInvoice->shipping_cost,
             ],
         ]);
     }
@@ -182,9 +194,15 @@ class CombinedInvoiceController extends Controller
             throw ValidationException::withMessages(['invoice_ids' => 'Pilihan invoice tidak valid atau sudah masuk Faktur lain.']);
         }
 
-        DB::transaction(function () use ($combinedInvoice, $data, $allowedIds) {
+        DB::transaction(function () use ($combinedInvoice, $data, $allowedIds, $request) {
             $combinedInvoice->update(['due_date' => $data['use_due_date'] ? $data['due_date'] : null]);
             $combinedInvoice->invoices()->sync($allowedIds);
+            $this->documents->updateShipping(
+                $combinedInvoice,
+                filled($data['courier_id'] ?? null) ? (int) $data['courier_id'] : null,
+                $data['shipping_cost'] ?? 0,
+                $request->user()->id,
+            );
         });
 
         return redirect()->route('combined-invoices.show', $combinedInvoice)->with('success', 'Faktur berhasil diperbarui.');
@@ -287,7 +305,7 @@ class CombinedInvoiceController extends Controller
                     'amount' => $allocation,
                     'notes' => trim('Pembayaran Faktur '.$combinedInvoice->facture_number.'. '.($data['notes'] ?? '')),
                 ]), $request->user()->id);
-                $payment->update(['combined_invoice_document_id' => $combinedInvoice->id]);
+                $this->payments->attachToCombinedInvoice($payment, $combinedInvoice, $request->user()->id);
                 $unallocated = bcsub($unallocated, $allocation, 2);
             }
 
@@ -336,7 +354,7 @@ class CombinedInvoiceController extends Controller
 
     private function combinedData(CombinedInvoiceDocument $document, bool $canViewProfit): array
     {
-        $columns = ['invoices.id', 'invoice_number', 'purchase_order_number', 'invoice_date', 'due_date', 'grand_total', 'paid_amount', 'remaining_amount', 'status', 'notes'];
+        $columns = ['invoices.id', 'invoice_number', 'purchase_order_number', 'invoice_date', 'due_date', 'grand_total', 'paid_amount', 'remaining_amount', 'status'];
         if ($canViewProfit) {
             $columns = [...$columns, 'subtotal', 'discount_amount', 'gross_profit'];
         }
@@ -382,6 +400,8 @@ class CombinedInvoiceController extends Controller
             'invoice_ids.*' => ['required', 'integer', 'distinct', 'exists:invoices,id'],
             'use_due_date' => ['required', 'boolean'],
             'due_date' => ['nullable', 'required_if:use_due_date,true', 'date'],
+            'courier_id' => [Rule::requiredIf((float) $request->input('shipping_cost', 0) > 0), 'nullable', 'integer', 'exists:couriers,id'],
+            'shipping_cost' => ['nullable', 'numeric', 'min:0'],
         ]);
     }
 

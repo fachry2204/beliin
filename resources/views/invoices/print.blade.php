@@ -21,10 +21,10 @@
         .customer-col { padding-right: 5px; }
         .invoice-col { padding-left: 5px; }
         .invoice-title { text-align: right; }
-        .invoice-heading { color: #000; font-size: 9pt; font-weight: bold; line-height: 1.25; overflow-wrap: break-word; word-break: normal; }
+        .invoice-heading { margin: 0 0 4px; color: #000; font-size: 9pt; font-weight: bold; line-height: 1.25; text-align: right; overflow-wrap: break-word; word-break: normal; }
         .invoice-heading-label { font-size: 12pt; }
-        .invoice-heading-meta { font-size: 8pt; }
-        .invoice-po { margin-top: 3px; font-size: 7pt; font-weight: bold; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
+        .invoice-meta-line { font-size: 7pt; line-height: 1.4; overflow-wrap: break-word; word-break: normal; }
+        .invoice-meta-label { font-weight: bold; }
         .box { min-height: 48px; padding: 6px; border: 1px solid #000; background: #fff; }
         .box h3 { margin: 0 0 4px; color: #000; font-size: 7.5pt; }
         .billing-line { line-height: 1.45; }
@@ -56,11 +56,10 @@
         .top { padding-bottom: 6px; }
         .brand h1 { margin-bottom: 3px; font-size: 15pt; }
         .company-meta { font-size: 9.5pt; line-height: 1.35; }
-        .details { margin: 7mm 0 9px; }
-        .invoice-heading { padding-bottom: 2px; font-size: 11pt; line-height: 1.35; }
+        .details { margin: 10mm 0 9px; }
+        .invoice-heading { margin-bottom: 5px; padding-bottom: 2px; font-size: 11pt; line-height: 1.35; }
         .invoice-heading-label { font-size: 14pt; }
-        .invoice-heading-meta { font-size: 9.5pt; }
-        .invoice-po { padding-bottom: 2px; font-size: 9.5pt; line-height: 1.35; }
+        .invoice-meta-line { padding-bottom: 2px; font-size: 9.5pt; line-height: 1.35; }
         .box { min-height: 64px; padding: 8px; overflow: visible; }
         .box h3 { font-size: 10pt; }
         .billing-line { line-height: 1.45; }
@@ -111,12 +110,19 @@
             </div>
         </div>
         <div class="invoice-col">
+            <div class="invoice-heading">
+                <span class="invoice-heading-label">INVOICE</span>
+            </div>
             <div class="box invoice-title">
-                <div class="invoice-heading">
-                    <span class="invoice-heading-label">INVOICE</span>
-                    <span class="invoice-heading-meta"> | Tanggal : {{ $invoice->invoice_date->format('d/m/Y') }} | No Invoice : {{ $invoice->invoice_number }}</span>
+                <div class="invoice-meta-line">
+                    <span class="invoice-meta-label">Tanggal Invoice :</span> {{ $invoice->invoice_date->format('d/m/Y') }}
                 </div>
-                <div class="invoice-po">No. PO : {{ $invoice->purchase_order_number ?: '-' }}</div>
+                <div class="invoice-meta-line">
+                    <span class="invoice-meta-label">No Invoice :</span> {{ $invoice->invoice_number }}
+                </div>
+                <div class="invoice-meta-line">
+                    <span class="invoice-meta-label">No PO :</span> {{ $invoice->purchase_order_number ?: '-' }}
+                </div>
             </div>
         </div>
     </div>

@@ -25,7 +25,11 @@ class InvoiceController extends Controller
         $this->authorize('invoices.view');
         $canViewProfit = $request->user()->can('profit.view');
         $sort = in_array($request->sort, ['invoice_date', 'due_date', 'grand_total', 'remaining_amount'], true) ? $request->sort : 'invoice_date';
-        $rows = Invoice::query()->with(['customer:id,name,company_name', 'creator:id,name'])
+        $rows = Invoice::query()->with([
+            'customer:id,name,company_name',
+            'creator:id,name',
+            'delivery:id,invoice_id,status',
+        ])
             ->when($request->search, fn ($query, $search) => $query->where(fn ($q) => $q->where('invoice_number', 'like', "%{$search}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%")->orWhere('company_name', 'like', "%{$search}%"))))
             ->when($request->status, fn ($query, $status) => $query->where('status', $status))
             ->when($request->date_from, fn ($query, $date) => $query->whereDate('invoice_date', '>=', $date))

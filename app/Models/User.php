@@ -57,4 +57,9 @@ class User extends Authenticatable
     {
         return $this->hasOne(Courier::class);
     }
+
+    public function webPushSubscriptions()
+    {
+        return $this->hasMany(WebPushSubscription::class);
+    }
 }

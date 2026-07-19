@@ -23,6 +23,7 @@ class InvoiceService
         private AuditLogService $audit,
         private CashTransactionService $cash,
         private CombinedInvoiceService $combinedInvoices,
+        private CourierPushService $courierPush,
     ) {}
 
     public function create(array $data, int $userId): Invoice
@@ -135,10 +136,14 @@ class InvoiceService
                 'status' => InvoiceStatus::Unpaid,
                 'issued_at' => now(),
             ]);
-            $this->syncCourierDelivery($invoice);
+            $delivery = $this->syncCourierDelivery($invoice);
             $this->cash->syncInvoiceShipping($invoice, $userId, $shippingPaidNow);
             $this->audit->record('issue', 'invoice', $invoice);
             Cache::forget('dashboard.metrics');
+
+            if ($delivery) {
+                DB::afterCommit(fn () => $this->courierPush->sendNewTask($delivery));
+            }
 
             return $invoice->fresh();
         });
@@ -156,6 +161,7 @@ class InvoiceService
                 ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $invoice->courier_id))
                 ->firstOrFail();
             $old = $invoice->load(['shippingDeposit', 'delivery'])->toArray();
+            $previousCourierId = $invoice->courier_id;
 
             $invoice->update([
                 'courier_id' => $courier->id,
@@ -163,10 +169,14 @@ class InvoiceService
                 'shipping_cost' => $shippingCost,
             ]);
 
-            $this->syncCourierDelivery($invoice);
+            $delivery = $this->syncCourierDelivery($invoice);
             $this->cash->syncInvoiceShipping($invoice, $userId, $shippingPaidNow);
             $this->audit->record('update_shipping', 'invoice', $invoice, $old, $invoice->fresh(['shippingDeposit', 'delivery'])->toArray());
             Cache::forget('dashboard.metrics');
+
+            if ($delivery && $previousCourierId !== $courier->id) {
+                DB::afterCommit(fn () => $this->courierPush->sendNewTask($delivery));
+            }
 
             return $invoice->fresh(['shippingDeposit', 'delivery']);
         });
@@ -265,12 +275,12 @@ class InvoiceService
         return bccomp($paidAmount, '0', 2) > 0 ? InvoiceStatus::PartiallyPaid : InvoiceStatus::Unpaid;
     }
 
-    private function syncCourierDelivery(Invoice $invoice): void
+    private function syncCourierDelivery(Invoice $invoice): ?CourierDelivery
     {
         if (! $invoice->courier_id) {
             $invoice->delivery()->where('status', CourierDelivery::PENDING)->delete();
 
-            return;
+            return null;
         }
 
         $delivery = $invoice->delivery()->first();
@@ -278,7 +288,7 @@ class InvoiceService
             throw ValidationException::withMessages(['courier_id' => 'Kurir tidak dapat diganti setelah tugas diambil.']);
         }
 
-        CourierDelivery::updateOrCreate(
+        return CourierDelivery::updateOrCreate(
             ['invoice_id' => $invoice->id],
             ['courier_id' => $invoice->courier_id, 'status' => $delivery?->status ?? CourierDelivery::PENDING],
         );

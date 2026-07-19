@@ -53,6 +53,10 @@ class HandleInertiaRequests extends Middleware
                 'logo_url' => $company?->logo ? '/storage/'.ltrim($company->logo, '/') : null,
                 'favicon_url' => $company?->favicon ? '/storage/'.ltrim($company->favicon, '/') : null,
             ],
+            'webPush' => [
+                'enabled' => filled(config('services.webpush.public_key')) && filled(config('services.webpush.private_key')),
+                'publicKey' => config('services.webpush.public_key'),
+            ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

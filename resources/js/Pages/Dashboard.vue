@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Head, Link } from "@inertiajs/vue3";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import DashboardCard from "@/Components/UI/DashboardCard.vue";
@@ -26,6 +26,7 @@ const props = defineProps<{
     };
     recent: Invoice[];
     chart: Point[];
+    dailyChart: Point[];
 }>();
 const money = (v: string | number) =>
     new Intl.NumberFormat("id-ID", {
@@ -33,17 +34,49 @@ const money = (v: string | number) =>
         currency: "IDR",
         maximumFractionDigits: 0,
     }).format(Number(v));
+type ChartPeriod = "daily" | "6" | "12";
+const selectedPeriod = ref<ChartPeriod>("12");
+const periodOptions: { value: ChartPeriod; label: string }[] = [
+    { value: "daily", label: "Per Hari" },
+    { value: "6", label: "Per 6 Bulan" },
+    { value: "12", label: "Per 12 Bulan" },
+];
+const visibleChart = computed(() =>
+    selectedPeriod.value === "daily"
+        ? props.dailyChart
+        : props.chart.slice(-Number(selectedPeriod.value)),
+);
+const selectedPeriodLabel = computed(
+    () =>
+        periodOptions.find((option) => option.value === selectedPeriod.value)
+            ?.label ?? "Per 12 Bulan",
+);
 const max = computed(() =>
-    Math.max(...props.chart.map((p) => Number(p.total)), 1),
+    Math.max(...visibleChart.value.map((p) => Number(p.total)), 1),
 );
-const points = computed(() =>
-    props.chart
-        .map(
-            (p, i) =>
-                `${(i / Math.max(props.chart.length - 1, 1)) * 100},${92 - (Number(p.total) / max.value) * 75}`,
-        )
-        .join(" "),
+const barSlotWidth = computed(
+    () => 100 / Math.max(visibleChart.value.length, 1),
 );
+const barWidth = computed(() => Math.min(barSlotWidth.value * 0.56, 10));
+const chartMinWidth = computed(() =>
+    selectedPeriod.value === "daily"
+        ? Math.max(720, visibleChart.value.length * 52)
+        : 0,
+);
+const shortMoney = (value: string | number) => {
+    const amount = Number(value);
+    if (amount >= 1_000_000_000)
+        return `Rp${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(amount / 1_000_000_000)} M`;
+    if (amount >= 1_000_000)
+        return `Rp${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(amount / 1_000_000)} jt`;
+    if (amount >= 1_000)
+        return `Rp${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(amount / 1_000)} rb`;
+    return money(amount);
+};
+const chartMoney = (value: string | number) =>
+    selectedPeriod.value === "daily" ? shortMoney(value) : money(value);
+const labelTop = (value: string | number) =>
+    `${Math.max(3, 92 - (Number(value) / max.value) * 75 - 2)}%`;
 const statusValue = (status: Invoice["status"]) =>
     typeof status === "string" ? status : status.value;
 </script>
@@ -79,14 +112,32 @@ const statusValue = (status: Invoice["status"]) =>
             <div class="mb-5 flex items-center justify-between">
                 <div>
                     <h2 class="font-bold text-slate-800">Tren Penjualan</h2>
-                    <p class="text-xs text-slate-500">12 bulan terakhir</p>
+                    <p class="text-xs text-slate-500">
+                        {{ selectedPeriodLabel }}
+                    </p>
                 </div>
-                <span
-                    class="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600"
-                    >12 Bulan Terakhir</span
+                <label class="sr-only" for="sales-chart-period"
+                    >Periode tren penjualan</label
                 >
+                <select
+                    id="sales-chart-period"
+                    v-model="selectedPeriod"
+                    class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:border-sky-500 focus:ring-sky-500"
+                >
+                    <option
+                        v-for="option in periodOptions"
+                        :key="option.value"
+                        :value="option.value"
+                    >
+                        {{ option.label }}
+                    </option>
+                </select>
             </div>
-            <div class="h-64 w-full">
+            <div class="overflow-x-auto pb-2">
+                <div
+                    class="relative h-64 w-full"
+                    :style="chartMinWidth ? { minWidth: `${chartMinWidth}px` } : undefined"
+                >
                 <svg
                     viewBox="0 0 100 100"
                     class="h-full w-full"
@@ -106,32 +157,43 @@ const statusValue = (status: Invoice["status"]) =>
                             :y2="y"
                         />
                     </g>
-                    <polyline
-                        v-if="chart.length"
-                        :points="points"
-                        fill="none"
-                        stroke="#0ea5e9"
-                        stroke-width="1.2"
-                        vector-effect="non-scaling-stroke"
-                    />
-                    <circle
-                        v-for="(p, i) in chart"
+                    <rect
+                        v-for="(p, i) in visibleChart"
                         :key="p.period"
-                        :cx="(i / Math.max(chart.length - 1, 1)) * 100"
-                        :cy="92 - (Number(p.total) / max) * 75"
-                        r="1.1"
+                        :x="i * barSlotWidth + (barSlotWidth - barWidth) / 2"
+                        :y="92 - (Number(p.total) / max) * 75"
+                        :width="barWidth"
+                        :height="(Number(p.total) / max) * 75"
+                        rx="1"
                         fill="#0284c7"
-                        vector-effect="non-scaling-stroke"
-                    />
+                        class="transition-opacity hover:opacity-80"
+                    >
+                        <title>{{ p.period }}: {{ money(p.total) }}</title>
+                    </rect>
                 </svg>
-            </div>
-            <div
-                class="grid text-center text-[10px] text-slate-500"
-                :style="{
-                    gridTemplateColumns: `repeat(${chart.length},minmax(0,1fr))`,
-                }"
-            >
-                <span v-for="p in chart" :key="p.period">{{ p.period }}</span>
+                <div
+                    v-for="(p, i) in visibleChart"
+                    v-show="Number(p.total) > 0"
+                    :key="`value-${p.period}`"
+                    class="pointer-events-none absolute text-center text-[9px] font-bold text-slate-700 sm:text-[10px]"
+                    :style="{
+                        left: `${i * barSlotWidth}%`,
+                        top: labelTop(p.total),
+                        width: `${barSlotWidth}%`,
+                        transform: 'translateY(-100%)',
+                    }"
+                >
+                    {{ chartMoney(p.total) }}
+                </div>
+                <div
+                    class="absolute inset-x-0 bottom-0 grid text-center text-[9px] text-slate-500 sm:text-[10px]"
+                    :style="{
+                        gridTemplateColumns: `repeat(${visibleChart.length},minmax(0,1fr))`,
+                    }"
+                >
+                    <span v-for="p in visibleChart" :key="p.period">{{ p.period }}</span>
+                </div>
+                </div>
             </div>
         </section>
         <section class="panel mt-5">

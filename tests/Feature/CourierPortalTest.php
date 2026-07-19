@@ -271,6 +271,53 @@ class CourierPortalTest extends TestCase
         }
     }
 
+    public function test_courier_can_register_refresh_and_remove_a_web_push_subscription(): void
+    {
+        $payload = [
+            'endpoint' => 'https://push.example.test/subscriptions/device-123',
+            'keys' => [
+                'p256dh' => 'public-key-device-123',
+                'auth' => 'auth-token-device-123',
+            ],
+            'content_encoding' => 'aes128gcm',
+        ];
+
+        $this->actingAs($this->courierUser)
+            ->postJson(route('courier.push-subscriptions.store'), $payload)
+            ->assertOk()
+            ->assertJson(['subscribed' => true]);
+
+        $this->assertDatabaseHas('web_push_subscriptions', [
+            'user_id' => $this->courierUser->id,
+            'endpoint_hash' => hash('sha256', $payload['endpoint']),
+            'content_encoding' => 'aes128gcm',
+        ]);
+
+        $this->actingAs($this->courierUser)
+            ->postJson(route('courier.push-subscriptions.store'), array_replace_recursive($payload, [
+                'keys' => ['auth' => 'updated-auth-token'],
+            ]))
+            ->assertOk();
+
+        $this->assertDatabaseCount('web_push_subscriptions', 1);
+        $this->assertDatabaseHas('web_push_subscriptions', ['auth_token' => 'updated-auth-token']);
+
+        $this->actingAs($this->courierUser)
+            ->deleteJson(route('courier.push-subscriptions.destroy'), ['endpoint' => $payload['endpoint']])
+            ->assertOk()
+            ->assertJson(['subscribed' => false]);
+
+        $this->assertDatabaseCount('web_push_subscriptions', 0);
+    }
+
+    public function test_non_courier_cannot_register_a_web_push_subscription(): void
+    {
+        $this->actingAs($this->admin)->postJson(route('courier.push-subscriptions.store'), [
+            'endpoint' => 'https://push.example.test/subscriptions/admin',
+            'keys' => ['p256dh' => 'public-key', 'auth' => 'auth-token'],
+        ])->assertForbidden();
+    }
+
     private function issuedInvoice()
     {
         $invoice = app(InvoiceService::class)->create([

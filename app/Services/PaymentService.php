@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\InvoiceStatus;
 use App\Models\Invoice;
+use App\Models\CombinedInvoiceDocument;
 use App\Models\Payment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -70,6 +71,17 @@ class PaymentService
             Cache::forget('dashboard.metrics');
 
             return $payment->fresh();
+        });
+    }
+
+    public function attachToCombinedInvoice(Payment $payment, CombinedInvoiceDocument $document, int $userId): Payment
+    {
+        return DB::transaction(function () use ($payment, $document, $userId) {
+            $payment->update(['combined_invoice_document_id' => $document->id]);
+            $payment = $payment->fresh(['invoice', 'combinedInvoice']);
+            $this->cash->syncFromPayment($payment, $userId);
+
+            return $payment;
         });
     }
 }
