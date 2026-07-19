@@ -16,6 +16,7 @@ interface CashRow {
     id: number;
     payment_id?: number;
     invoice_id?: number;
+    invoice_cost_id?: number;
     combined_invoice_document_id?: number;
     facture_commission_exists?: boolean;
     transaction_number: string;
@@ -93,7 +94,9 @@ const method = (value: string) =>
 const category = (row: CashRow) =>
     row.invoice_id || row.combined_invoice_document_id
         ? "Ongkir Driver"
-        : row.category;
+        : row.invoice_cost_id
+          ? "Harga Modal"
+          : row.category;
 
 const openCreate = () => {
     editingId.value = null;
@@ -220,21 +223,24 @@ const remove = (row: CashRow) => {
                                     :class="
                                         row.payment_id ||
                                         row.invoice_id ||
+                                        row.invoice_cost_id ||
                                         row.combined_invoice_document_id ||
                                         row.facture_commission_exists
                                             ? 'bg-emerald-100 text-emerald-700'
                                             : 'bg-slate-100 text-slate-600'
                                     "
-                                    >{{
+                                    >{{ 
                                         row.payment_id
                                             ? "Pembayaran Invoice"
                                             : row.invoice_id
                                               ? "Ongkir Driver"
-                                              : row.combined_invoice_document_id
-                                                ? "Ongkir Driver Faktur"
-                                              : row.facture_commission_exists
-                                                ? "Komisi Faktur"
-                                                : "Input Manual"
+                                              : row.invoice_cost_id
+                                                ? "Modal Invoice"
+                                                : row.combined_invoice_document_id
+                                                  ? "Ongkir Driver Faktur"
+                                                  : row.facture_commission_exists
+                                                    ? "Komisi Faktur"
+                                                    : "Input Manual"
                                     }}</span
                                 >
                             </td>
@@ -262,6 +268,7 @@ const remove = (row: CashRow) => {
                                     v-if="
                                         !row.payment_id &&
                                         !row.invoice_id &&
+                                        !row.invoice_cost_id &&
                                         !row.combined_invoice_document_id &&
                                         !row.facture_commission_exists
                                     "

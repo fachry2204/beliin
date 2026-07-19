@@ -13,6 +13,7 @@ class CashTransaction extends Model
         'transaction_number',
         'payment_id',
         'invoice_id',
+        'invoice_cost_id',
         'combined_invoice_document_id',
         'type',
         'transaction_date',
@@ -44,6 +45,11 @@ class CashTransaction extends Model
     public function invoice()
     {
         return $this->belongsTo(Invoice::class);
+    }
+
+    public function invoiceCost()
+    {
+        return $this->belongsTo(Invoice::class, 'invoice_cost_id');
     }
 
     public function combinedInvoiceDocument()

@@ -35,7 +35,7 @@ class CashTransactionService
 
     public function update(CashTransaction $transaction, array $data, int $userId): CashTransaction
     {
-        abort_if($transaction->payment_id || $transaction->invoice_id || $transaction->combined_invoice_document_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat diubah manual.');
+        abort_if($transaction->payment_id || $transaction->invoice_id || $transaction->invoice_cost_id || $transaction->combined_invoice_document_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat diubah manual.');
         $old = $transaction->toArray();
         $transaction->update([...$data, 'updated_by' => $userId]);
         $this->audit->record('update', 'cash_transaction', $transaction, $old, $transaction->fresh()->toArray());
@@ -45,7 +45,7 @@ class CashTransactionService
 
     public function delete(CashTransaction $transaction): void
     {
-        abort_if($transaction->payment_id || $transaction->invoice_id || $transaction->combined_invoice_document_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat dihapus manual.');
+        abort_if($transaction->payment_id || $transaction->invoice_id || $transaction->invoice_cost_id || $transaction->combined_invoice_document_id || FactureCommission::where('cash_transaction_id', $transaction->id)->exists(), 422, 'Transaksi kas otomatis tidak dapat dihapus manual.');
         $old = $transaction->toArray();
         $transaction->delete();
         $this->audit->record('delete', 'cash_transaction', $transaction, $old);
@@ -314,6 +314,72 @@ class CashTransactionService
 
         $old = $transaction->toArray();
         $transaction->delete();
+        $this->audit->record('delete', 'cash_transaction', $transaction, $old);
+    }
+
+    public function syncInvoiceCost(Invoice $invoice, int $userId): ?CashTransaction
+    {
+        return DB::transaction(function () use ($invoice, $userId) {
+            $transaction = CashTransaction::withTrashed()
+                ->where('invoice_cost_id', $invoice->id)
+                ->first();
+
+            if (bccomp((string) $invoice->total_cost, '0', 2) <= 0) {
+                if ($transaction && ! $transaction->trashed()) {
+                    $old = $transaction->toArray();
+                    $transaction->delete();
+                    $this->audit->record('delete', 'cash_transaction', $transaction, $old);
+                }
+
+                return null;
+            }
+
+            $data = [
+                'type'             => 'out',
+                'transaction_date' => $invoice->invoice_date->toDateString(),
+                'category'         => 'Harga Modal',
+                'description'      => "Modal - {$invoice->billing_name}",
+                'payment_method'   => 'cash',
+                'amount'           => $invoice->total_cost,
+                'reference_number' => $invoice->invoice_number,
+                'updated_by'       => $userId,
+            ];
+
+            if ($transaction) {
+                $old = $transaction->toArray();
+                if ($transaction->trashed()) {
+                    $transaction->restore();
+                }
+                $transaction->update($data);
+                $this->audit->record('update', 'cash_transaction', $transaction, $old, $transaction->fresh()->toArray());
+
+                return $transaction->fresh();
+            }
+
+            $transaction = CashTransaction::create([
+                ...$data,
+                'invoice_cost_id'    => $invoice->id,
+                'transaction_number' => $this->nextNumber('out', $invoice->invoice_date),
+                'created_by'         => $userId,
+            ]);
+            $this->audit->record('create', 'cash_transaction', $transaction, null, $transaction->toArray());
+
+            return $transaction;
+        });
+    }
+
+    public function deleteInvoiceCost(Invoice $invoice): void
+    {
+        $transaction = CashTransaction::withTrashed()
+            ->where('invoice_cost_id', $invoice->id)
+            ->first();
+
+        if (! $transaction) {
+            return;
+        }
+
+        $old = $transaction->toArray();
+        $transaction->forceDelete();
         $this->audit->record('delete', 'cash_transaction', $transaction, $old);
     }
 
