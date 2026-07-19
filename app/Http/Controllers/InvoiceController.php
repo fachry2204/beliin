@@ -82,8 +82,14 @@ class InvoiceController extends Controller
             $invoice->items->each->makeVisible(['purchase_price', 'cost_total', 'profit']);
         }
 
+        $invoiceData = $invoice->toArray();
+        $invoiceData['invoice_date'] = $invoice->invoice_date?->toDateString();
+        $invoiceData['due_date'] = $invoice->due_date?->toDateString();
+
         return Inertia::render('Invoices/Create', [
-            'invoice' => $invoice,
+            // Keep date-only fields as calendar dates. Direct model serialization
+            // converts them to UTC timestamps and may shift the displayed day.
+            'invoice' => $invoiceData,
             'customers' => Customer::where('is_active', true)->orderBy('name')->get(['id', 'name', 'company_name', 'address']),
             'products' => Product::where('is_active', true)->orderBy('name')->get(['id', 'name', 'sku', 'unit', 'selling_price', 'purchase_price']),
             'defaultTax' => $settings?->default_tax_percentage ?? 11,

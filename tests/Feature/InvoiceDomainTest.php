@@ -594,6 +594,23 @@ class InvoiceDomainTest extends TestCase
         ]);
     }
 
+    public function test_invoice_edit_keeps_date_only_values_without_timezone_shift(): void
+    {
+        $invoice = $this->makeInvoice();
+        $invoice->update([
+            'invoice_date' => '2026-07-16',
+            'due_date' => '2026-07-23',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('invoices.edit', $invoice))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Invoices/Create')
+                ->where('invoice.invoice_date', '2026-07-16')
+                ->where('invoice.due_date', '2026-07-23'));
+    }
+
     public function test_invoice_shipping_paid_when_issued_is_recorded_directly_as_cash_out(): void
     {
         $invoice = $this->makeInvoice();

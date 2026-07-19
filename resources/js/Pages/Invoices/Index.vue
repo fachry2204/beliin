@@ -12,6 +12,7 @@ import { percentageText } from "@/utils/percentage";
 interface Row {
     id: number;
     invoice_number: string;
+    purchase_order_number?: string | null;
     invoice_date: string;
     due_date: string;
     subtotal: string;
@@ -147,6 +148,9 @@ const courierStatusClass = (delivery?: Row["delivery"]) => {
                                 >
                                     {{ row.invoice_number }}
                                 </Link>
+                                <div class="mt-1 text-xs text-slate-400">
+                                    PO: {{ row.purchase_order_number || "-" }}
+                                </div>
                             </td>
                             <td>
                                 {{

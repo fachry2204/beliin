@@ -92,7 +92,14 @@ const normalizeQuantity = (value: string | number) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? String(numeric) : String(value ?? "");
 };
+const normalizeDateInput = (value: string | undefined, fallback: string) => {
+    if (!value) return fallback;
+
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+};
 const initial = props.invoice;
+const initialInvoiceDate = normalizeDateInput(initial?.invoice_date, today);
+const initialDueDate = normalizeDateInput(initial?.due_date, due);
 const form = useForm<{
     customer_id: string;
     invoice_date: string;
@@ -106,8 +113,8 @@ const form = useForm<{
     items: InvoiceItem[];
 }>({
     customer_id: String(initial?.customer_id ?? ""),
-    invoice_date: initial?.invoice_date.slice(0, 10) ?? today,
-    due_date: initial?.due_date.slice(0, 10) ?? due,
+    invoice_date: initialInvoiceDate,
+    due_date: initialDueDate,
     purchase_order_number: initial?.purchase_order_number ?? "",
     discount_type: props.discountEnabled
         ? (initial?.discount_type ?? "percentage")
@@ -123,8 +130,7 @@ const form = useForm<{
           )
         : "0",
     notes: initial?.notes ?? "",
-    terms:
-        initial?.terms ?? paymentTerms(initial?.due_date.slice(0, 10) ?? due),
+    terms: initial?.terms ?? paymentTerms(initialDueDate),
     items: initial?.items.map((item) => ({
         product_id: String(item.product_id ?? ""),
         product_name: item.product_name_snapshot ?? item.product_name ?? "",
