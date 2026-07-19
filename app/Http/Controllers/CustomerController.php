@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Http\Requests\CustomerRequest;
 use App\Models\Customer;
 use App\Services\AuditLogService;
+use App\Services\CustomerCodeService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
 {
-    public function __construct(private AuditLogService $audit) {}
+    public function __construct(private AuditLogService $audit, private CustomerCodeService $customerCodes) {}
 
     public function index(Request $r)
     {
@@ -23,7 +24,9 @@ class CustomerController extends Controller
 
     public function store(CustomerRequest $r)
     {
-        $m = Customer::create($r->validated());
+        $data = $r->validated();
+        $data['customer_code'] = $this->customerCodes->next();
+        $m = Customer::create($data);
         $this->audit->record('create', 'customer', $m, null, $m->toArray());
 
         return back()->with('success', 'Pelanggan berhasil disimpan.');

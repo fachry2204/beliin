@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 
 class UserRequest extends FormRequest
 {
@@ -35,7 +34,6 @@ class UserRequest extends FormRequest
                 'max:150',
                 Rule::unique('users', 'email')->ignore($user),
             ],
-            'password' => [$user ? 'nullable' : 'required', Password::defaults()],
             'role' => ['required', 'exists:roles,name'],
             'is_active' => ['required', 'boolean'],
         ];
@@ -55,13 +53,6 @@ class UserRequest extends FormRequest
             'email.email' => 'Format email tidak valid.',
             'email.max' => 'Email maksimal :max karakter.',
             'email.unique' => 'Email sudah digunakan.',
-            'password.required' => 'Password wajib diisi.',
-            'password.min' => 'Password minimal :min karakter.',
-            'password.letters' => 'Password harus memiliki setidaknya satu huruf.',
-            'password.mixed' => 'Password harus memiliki huruf besar dan huruf kecil.',
-            'password.numbers' => 'Password harus memiliki setidaknya satu angka.',
-            'password.symbols' => 'Password harus memiliki setidaknya satu simbol.',
-            'password.uncompromised' => 'Password ini pernah muncul dalam kebocoran data. Gunakan password lain.',
             'role.required' => 'Role wajib dipilih.',
             'role.exists' => 'Role yang dipilih tidak valid.',
             'is_active.required' => 'Status aktif wajib diisi.',

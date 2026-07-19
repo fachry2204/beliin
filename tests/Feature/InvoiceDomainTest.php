@@ -66,10 +66,10 @@ class InvoiceDomainTest extends TestCase
 
     public function test_authorized_user_can_create_customer_supplier_and_product(): void
     {
-        $this->actingAs($this->admin)->post(route('customers.store'), ['customer_code' => 'CUS-002', 'name' => 'Ani', 'is_active' => true])->assertRedirect();
+        $this->actingAs($this->admin)->post(route('customers.store'), ['name' => 'Ani', 'is_active' => true])->assertRedirect()->assertSessionHasNoErrors();
         $this->actingAs($this->admin)->post(route('suppliers.store'), ['supplier_code' => 'SUP-002', 'name' => 'Dani', 'is_active' => true])->assertRedirect();
         $this->actingAs($this->admin)->post(route('products.store'), ['category_id' => $this->product->category_id, 'sku' => 'SKU-002', 'name' => 'Pasir', 'unit' => 'M3', 'purchase_price' => 10000, 'selling_price' => 15000, 'minimum_stock' => 0, 'is_active' => true])->assertRedirect();
-        $this->assertDatabaseHas('customers', ['customer_code' => 'CUS-002']);
+        $this->assertDatabaseHas('customers', ['customer_code' => 'CUS-00002', 'name' => 'Ani']);
         $this->assertDatabaseHas('suppliers', ['supplier_code' => 'SUP-002']);
         $this->assertDatabaseHas('products', ['sku' => 'SKU-002']);
     }

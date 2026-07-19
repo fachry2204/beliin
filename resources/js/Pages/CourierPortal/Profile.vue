@@ -29,6 +29,16 @@ const form = useForm({
 });
 const submit = () =>
     form.patch(route("courier.profile.update"), { preserveScroll: true });
+const passwordForm = useForm({
+    current_password: "",
+    password: "",
+    password_confirmation: "",
+});
+const updatePassword = () =>
+    passwordForm.put(route("password.update"), {
+        preserveScroll: true,
+        onSuccess: () => passwordForm.reset(),
+    });
 </script>
 <template>
     <Head title="Profil Kurir" /><CourierLayout
@@ -114,6 +124,58 @@ const submit = () =>
                     :disabled="form.processing"
                 >
                     Simpan Profil
+                </button>
+            </form>
+        </section>
+        <section
+            class="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+            <h2 class="font-bold">Ubah Password</h2>
+            <p class="mt-1 text-sm text-slate-500">
+                Gunakan password yang hanya Anda ketahui untuk menjaga keamanan akun.
+            </p>
+            <form
+                class="mt-5 grid gap-4"
+                @submit.prevent="updatePassword"
+            >
+                <label
+                    ><span class="label">Password Saat Ini</span
+                    ><input
+                        v-model="passwordForm.current_password"
+                        type="password"
+                        autocomplete="current-password"
+                        class="input"
+                        required
+                /></label>
+                <label
+                    ><span class="label">Password Baru</span
+                    ><input
+                        v-model="passwordForm.password"
+                        type="password"
+                        autocomplete="new-password"
+                        class="input"
+                        required
+                /></label>
+                <label
+                    ><span class="label">Konfirmasi Password Baru</span
+                    ><input
+                        v-model="passwordForm.password_confirmation"
+                        type="password"
+                        autocomplete="new-password"
+                        class="input"
+                        required
+                /></label>
+                <p
+                    v-if="Object.keys(passwordForm.errors).length"
+                    class="text-sm text-red-600"
+                >
+                    {{ Object.values(passwordForm.errors)[0] }}
+                </p>
+                <button
+                    class="rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                    :disabled="passwordForm.processing"
+                >
+                    {{ passwordForm.processing ? "Menyimpan..." : "Simpan Password" }}
                 </button>
             </form>
         </section></CourierLayout

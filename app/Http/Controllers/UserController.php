@@ -8,12 +8,15 @@ use App\Models\User;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
+    private const DEFAULT_PASSWORD = '12345678';
+
     public function __construct(private AuditLogService $audit) {}
 
     public function index(Request $request)
@@ -32,6 +35,7 @@ class UserController extends Controller
         $data = $request->validated();
         $role = $data['role'];
         unset($data['role']);
+        $data['password'] = self::DEFAULT_PASSWORD;
         $user = DB::transaction(function () use ($data, $role) {
             $user = User::create($data);
             $user->assignRole($role);
@@ -51,11 +55,9 @@ class UserController extends Controller
         $old = $user->load('roles')->toArray();
         $role = $data['role'];
         unset($data['role']);
-        if (blank($data['password'] ?? null)) {
-            unset($data['password']);
-        } else {
-            $data['password'] = Hash::make($data['password']);
-        }
+        // Status akun hanya boleh diubah melalui aksi khusus agar seluruh
+        // pengamanan akun aktif dan Super Admin selalu dijalankan.
+        $data['is_active'] = $user->is_active;
         DB::transaction(function () use ($user, $data, $role) {
             $user->update($data);
             $user->syncRoles([$role]);
@@ -64,6 +66,57 @@ class UserController extends Controller
         $this->audit->record('update', 'user', $user, $old, $user->fresh('roles')->toArray());
 
         return back()->with('success', 'Pengguna diperbarui.');
+    }
+
+    public function updateStatus(Request $request, User $user)
+    {
+        $this->authorize('users.manage');
+        $data = $request->validate(['is_active' => ['required', 'boolean']]);
+        $active = (bool) $data['is_active'];
+
+        if (! $active && $request->user()->is($user)) {
+            throw ValidationException::withMessages(['action' => 'Akun yang sedang digunakan tidak dapat dinonaktifkan.']);
+        }
+        $this->ensureSuperAdminRemainsActive($user, $active);
+
+        $old = ['is_active' => $user->is_active];
+        DB::transaction(function () use ($user, $active): void {
+            $user->update(['is_active' => $active]);
+            $user->courier?->update([
+                'is_active' => $active,
+                ...($active ? [] : ['is_online' => false]),
+            ]);
+        });
+        $this->audit->record('update_status', 'user', $user, $old, ['is_active' => $active]);
+
+        return back()->with('success', $active ? 'Pengguna diaktifkan.' : 'Pengguna dinonaktifkan.');
+    }
+
+    public function destroy(Request $request, User $user)
+    {
+        $this->authorize('users.manage');
+        if ($request->user()->is($user)) {
+            throw ValidationException::withMessages(['action' => 'Akun yang sedang digunakan tidak dapat dihapus.']);
+        }
+        if ($user->hasRole('Super Admin')) {
+            throw ValidationException::withMessages(['action' => 'Akun Super Admin tidak dapat dihapus. Nonaktifkan akun lain bila sudah tidak digunakan.']);
+        }
+
+        $usage = $this->transactionUsage($user);
+        if ($usage !== []) {
+            throw ValidationException::withMessages([
+                'action' => 'Pengguna tidak dapat dihapus karena memiliki histori '.implode(', ', $usage).'. Gunakan tombol Nonaktifkan agar histori tetap aman.',
+            ]);
+        }
+
+        $old = $user->load('roles')->toArray();
+        DB::transaction(function () use ($user): void {
+            $user->courier?->update(['user_id' => null, 'is_active' => false, 'is_online' => false]);
+            $user->delete();
+        });
+        $this->audit->record('delete', 'user', null, $old, null);
+
+        return back()->with('success', 'Pengguna dihapus.');
     }
 
     private function syncCourierProfile(User $user, string $role): void
@@ -105,5 +158,37 @@ class UserController extends Controller
         }
 
         return $code;
+    }
+
+    private function ensureSuperAdminRemainsActive(User $user, bool $active): void
+    {
+        if ($active || ! $user->hasRole('Super Admin')) {
+            return;
+        }
+
+        $activeSuperAdmins = User::role('Super Admin')->where('is_active', true)->count();
+        if ($activeSuperAdmins <= 1) {
+            throw ValidationException::withMessages(['action' => 'Super Admin aktif terakhir tidak dapat dinonaktifkan.']);
+        }
+    }
+
+    private function transactionUsage(User $user): array
+    {
+        $checks = [
+            'invoice' => ['invoices', 'created_by'],
+            'pembayaran' => ['payments', 'created_by'],
+            'barang masuk' => ['incoming_transactions', 'created_by'],
+            'pergerakan stok' => ['stock_movements', 'created_by'],
+            'kas' => ['cash_transactions', 'created_by'],
+            'deposito ongkir' => ['courier_shipping_deposits', 'created_by'],
+            'komisi faktur' => ['facture_commissions', 'created_by'],
+            'faktur' => ['combined_invoice_documents', 'created_by'],
+        ];
+
+        return collect($checks)
+            ->filter(fn (array $check) => Schema::hasTable($check[0])
+                && Schema::hasColumn($check[0], $check[1])
+                && DB::table($check[0])->where($check[1], $user->id)->exists())
+            ->keys()->all();
     }
 }

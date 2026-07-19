@@ -12,6 +12,7 @@ use App\Services\InvoiceService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -95,6 +96,13 @@ class CourierPortalTest extends TestCase
             ->where('courier.bank_name', 'Bank Mandiri')
             ->where('courier.bank_account_number', '9876543210')
             ->where('courier.bank_account_name', 'Budi Santoso'));
+
+        $this->actingAs($this->courierUser)->put(route('password.update'), [
+            'current_password' => 'password',
+            'password' => 'PasswordBaru123!',
+            'password_confirmation' => 'PasswordBaru123!',
+        ])->assertSessionHasNoErrors();
+        $this->assertTrue(Hash::check('PasswordBaru123!', $this->courierUser->fresh()->password));
     }
 
     public function test_issued_invoice_becomes_task_and_courier_can_complete_with_photo_time_and_gps(): void
@@ -208,13 +216,13 @@ class CourierPortalTest extends TestCase
             'name' => 'Rina Pengantar',
             'username' => 'rina_kurir',
             'email' => 'rina.kurir@example.test',
-            'password' => 'bangbens1',
             'role' => 'Kurir',
             'is_active' => true,
         ])->assertRedirect();
 
         $user = User::where('username', 'rina_kurir')->firstOrFail();
         $this->assertTrue($user->hasRole('Kurir'));
+        $this->assertTrue(Hash::check('12345678', $user->password));
         $this->assertDatabaseHas('couriers', [
             'user_id' => $user->id,
             'courier_code' => 'KUR-'.str_pad((string) $user->id, 5, '0', STR_PAD_LEFT),
@@ -226,7 +234,6 @@ class CourierPortalTest extends TestCase
             'name' => 'Rina Kurir Baru',
             'username' => 'rina_kurir',
             'email' => 'rina.kurir@example.test',
-            'password' => '',
             'role' => 'Staff',
             'is_active' => true,
         ])->assertRedirect();
@@ -237,22 +244,8 @@ class CourierPortalTest extends TestCase
         ]);
     }
 
-    public function test_user_validation_is_readable_and_all_non_courier_roles_can_be_saved(): void
+    public function test_all_non_courier_roles_are_saved_with_the_default_password(): void
     {
-        $this->actingAs($this->admin)->post(route('users.store'), [
-            'name' => 'Kurir Password Pendek',
-            'username' => 'kurir_pendek',
-            'email' => 'kurir.pendek@example.test',
-            'password' => '123456',
-            'role' => 'Kurir',
-            'is_active' => true,
-        ])->assertSessionHasErrors([
-            'password' => 'Password minimal 8 karakter.',
-        ]);
-
-        $this->assertDatabaseMissing('users', ['username' => 'kurir_pendek']);
-        $this->assertDatabaseCount('couriers', 1);
-
         foreach (['Admin', 'Finance', 'Staff', 'Pimpinan'] as $index => $role) {
             $username = 'pengguna_'.strtolower($role);
 
@@ -260,13 +253,13 @@ class CourierPortalTest extends TestCase
                 'name' => 'Pengguna '.$role,
                 'username' => $username,
                 'email' => $username.'@example.test',
-                'password' => 'bangbens1',
                 'role' => $role,
                 'is_active' => $index % 2 === 0,
             ])->assertSessionHasNoErrors();
 
             $user = User::where('username', $username)->firstOrFail();
             $this->assertTrue($user->hasRole($role));
+            $this->assertTrue(Hash::check('12345678', $user->password));
             $this->assertDatabaseMissing('couriers', ['user_id' => $user->id]);
         }
     }

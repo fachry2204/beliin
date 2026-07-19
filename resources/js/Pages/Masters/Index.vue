@@ -349,7 +349,7 @@ const remove = (row: Record<string, unknown>) => {
             @close="modal = false"
             ><form class="grid gap-4 sm:grid-cols-2" @submit.prevent="submit">
                 <template v-if="type === 'customer' || type === 'supplier'"
-                    ><label
+                    ><label v-if="type !== 'customer' || editingId"
                         ><span class="label">Kode *</span
                         ><AppInput
                             v-if="type === 'customer'"
@@ -358,6 +358,15 @@ const remove = (row: Record<string, unknown>) => {
                             v-else
                             v-model="form.supplier_code"
                             required /></label
+                    ><div
+                        v-else
+                        class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3"
+                    >
+                        <span class="label">Kode Pelanggan</span>
+                        <p class="text-sm font-semibold text-sky-700">
+                            Dibuat otomatis setelah data disimpan
+                        </p>
+                    </div
                     ><label
                         ><span class="label">Nama *</span
                         ><AppInput v-model="form.name" required /></label

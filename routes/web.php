@@ -99,7 +99,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/company/backups/{filename}', [CompanySettingController::class, 'downloadBackup'])->name('company.backups.download');
     Route::delete('settings/company/backups/{filename}', [CompanySettingController::class, 'deleteBackup'])->name('company.backups.destroy');
     Route::put('settings/company/roles/{role}', [CompanySettingController::class, 'updateRolePermissions'])->name('company.roles.update');
-    Route::resource('users', UserController::class)->only(['index', 'store', 'update']);
+    Route::patch('users/{user}/status', [UserController::class, 'updateStatus'])->name('users.status');
+    Route::resource('users', UserController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::get('activity-logs', ActivityLogController::class)->name('activity.index');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
