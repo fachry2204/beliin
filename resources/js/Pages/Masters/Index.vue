@@ -9,6 +9,7 @@ import AppTextarea from "@/Components/UI/AppTextarea.vue";
 import AppModal from "@/Components/UI/AppModal.vue";
 import SearchInput from "@/Components/UI/SearchInput.vue";
 import Pagination from "@/Components/UI/Pagination.vue";
+import ActionWarningModal from "@/Components/UI/ActionWarningModal.vue";
 interface LinkItem {
     url: string | null;
     label: string;
@@ -39,6 +40,7 @@ const props = withDefaults(
 const search = ref(new URLSearchParams(location.search).get("search") ?? "");
 const modal = ref(false);
 const editingId = ref<number | null>(null);
+const actionWarning = ref("");
 let timer: number;
 const endpoints = {
     customer: "customers",
@@ -138,9 +140,17 @@ const submit = () => {
         );
     else form.post(route(`${endpoints[props.type]}.store`), options);
 };
-const remove = (id: number) => {
+const remove = (row: Record<string, unknown>) => {
+    if (props.type === "customer" && num(row, "invoices_count") > 0) {
+        actionWarning.value = `Client tidak dapat dihapus karena masih memiliki ${num(row, "invoices_count")} invoice. Hapus seluruh invoice client terlebih dahulu.`;
+        return;
+    }
     if (confirm("Nonaktifkan/hapus data ini?"))
-        router.delete(route(`${endpoints[props.type]}.destroy`, id));
+        router.delete(route(`${endpoints[props.type]}.destroy`, num(row, "id")), {
+            onError: (errors) => {
+                if (errors.delete) actionWarning.value = errors.delete;
+            },
+        });
 };
 </script>
 <template>
@@ -306,7 +316,7 @@ const remove = (id: number) => {
                                         Edit</button
                                     ><button
                                         class="rounded border border-red-200 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
-                                        @click="remove(num(row, 'id'))"
+                                        @click="remove(row)"
                                     >
                                         Hapus
                                     </button>
@@ -474,6 +484,11 @@ const remove = (id: number) => {
                     >
                 </div>
             </form></AppModal
+        ><ActionWarningModal
+            :show="Boolean(actionWarning)"
+            :message="actionWarning"
+            @close="actionWarning = ''"
+        />
         ></AuthenticatedLayout
     >
 </template>

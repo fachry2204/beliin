@@ -332,6 +332,73 @@ class InvoiceDomainTest extends TestCase
         ]);
     }
 
+    public function test_invoice_cannot_be_cancelled_or_deleted_after_delivery_starts_or_facture_is_created(): void
+    {
+        $deliveryInvoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($deliveryInvoice, $this->admin->id, false, $this->courier->id, 15000);
+        $deliveryInvoice->delivery()->update([
+            'status' => CourierDelivery::ACCEPTED,
+            'accepted_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin)->post(route('invoices.cancel', $deliveryInvoice))->assertStatus(422);
+        $this->actingAs($this->admin)->delete(route('invoices.destroy', $deliveryInvoice))->assertStatus(422);
+        $this->assertDatabaseHas('invoices', ['id' => $deliveryInvoice->id, 'status' => 'unpaid']);
+
+        $facture = app(CombinedInvoiceService::class)->create(
+            $this->customer,
+            [$deliveryInvoice->id],
+            null,
+            $this->courier->id,
+            15000,
+            $this->admin->id,
+        );
+
+        $this->get(route('invoices.show', $deliveryInvoice))->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('destructiveLockReason', fn ($reason) => str_contains($reason, 'kurir sudah mengambil') && str_contains($reason, $facture->facture_number))
+        );
+        $this->delete(route('combined-invoices.destroy', $facture))->assertStatus(422);
+        $this->get(route('combined-invoices.show', $facture))->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('deletionLocked', true)
+                ->where('deletionLockReason', fn ($reason) => str_contains($reason, 'kurir sudah mengambil'))
+        );
+
+        $factureOnlyInvoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($factureOnlyInvoice, $this->admin->id, false, $this->courier->id, 0);
+        $factureOnly = app(CombinedInvoiceService::class)->create(
+            $this->customer,
+            [$factureOnlyInvoice->id],
+            null,
+            null,
+            0,
+            $this->admin->id,
+        );
+
+        $this->post(route('invoices.cancel', $factureOnlyInvoice))->assertStatus(422);
+        $this->delete(route('invoices.destroy', $factureOnlyInvoice))->assertStatus(422);
+        $this->assertDatabaseHas('combined_invoice_documents', ['id' => $factureOnly->id]);
+    }
+
+    public function test_client_cannot_be_deleted_while_it_has_invoices(): void
+    {
+        $invoice = $this->makeInvoice();
+
+        $this->actingAs($this->admin)
+            ->from(route('customers.index'))
+            ->delete(route('customers.destroy', $this->customer))
+            ->assertRedirect(route('customers.index'))
+            ->assertSessionHasErrors('delete');
+
+        $this->assertDatabaseHas('customers', ['id' => $this->customer->id, 'deleted_at' => null]);
+        $this->assertDatabaseHas('invoices', ['id' => $invoice->id]);
+
+        $unusedCustomer = Customer::factory()->create();
+        $this->delete(route('customers.destroy', $unusedCustomer))->assertRedirect();
+        $this->assertSoftDeleted('customers', ['id' => $unusedCustomer->id]);
+    }
+
     public function test_admin_can_delete_a_cancelled_invoice_with_legacy_payment_data(): void
     {
         $invoice = $this->makeInvoice();
@@ -1615,7 +1682,21 @@ class InvoiceDomainTest extends TestCase
         $this->assertSame($invoice->grand_total, $invoice->remaining_amount);
     }
 
-    public function test_deleting_client_data_removes_clients_and_dependent_transactions(): void
+    public function test_database_cleanup_failure_returns_to_settings_with_a_safe_error_message(): void
+    {
+        $this->admin->update(['password' => 'rahasia-admin']);
+        $cleanup = \Mockery::mock(DatabaseCleanupService::class);
+        $cleanup->shouldReceive('purge')->once()->with('invoices')->andThrow(new \RuntimeException('database failure'));
+        $this->app->instance(DatabaseCleanupService::class, $cleanup);
+
+        $this->actingAs($this->admin)->from(route('company.edit'))->delete(route('company.data.purge'), [
+            'scope' => 'invoices', 'password' => 'rahasia-admin', 'confirmation' => 'HAPUS DATA',
+        ])->assertRedirect(route('company.edit'))->assertSessionHasErrors('cleanup');
+
+        $this->assertDatabaseHas('customers', ['id' => $this->customer->id]);
+    }
+
+    public function test_database_cleanup_cannot_delete_clients_until_all_invoices_are_removed(): void
     {
         $invoice = $this->makeInvoice();
         app(InvoiceService::class)->issue($invoice, $this->admin->id, false, $this->courier->id, 15000);
@@ -1625,6 +1706,15 @@ class InvoiceDomainTest extends TestCase
         $archivedCustomer = Customer::factory()->create();
         $archivedCustomer->delete();
 
+        try {
+            app(DatabaseCleanupService::class)->purge('customers');
+            $this->fail('Penghapusan client seharusnya ditolak selama invoice masih ada.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('scope', $exception->errors());
+        }
+
+        $this->assertDatabaseHas('customers', ['id' => $this->customer->id]);
+        app(DatabaseCleanupService::class)->purge('invoices');
         $result = app(DatabaseCleanupService::class)->purge('customers');
 
         $this->assertSame(2, $result['before']['customers']);

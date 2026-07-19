@@ -6,6 +6,7 @@ use App\Http\Requests\CustomerRequest;
 use App\Models\Customer;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
@@ -15,7 +16,7 @@ class CustomerController extends Controller
     public function index(Request $r)
     {
         $this->authorize('customers.view');
-        $rows = Customer::query()->when($r->search, fn ($q, $s) => $q->where(fn ($q) => $q->where('name', 'like', "%$s%")->orWhere('customer_code', 'like', "%$s%")->orWhere('company_name', 'like', "%$s%")))->orderBy($r->sort ?? 'name', $r->direction === 'desc' ? 'desc' : 'asc')->paginate(15)->withQueryString();
+        $rows = Customer::query()->withCount('invoices')->when($r->search, fn ($q, $s) => $q->where(fn ($q) => $q->where('name', 'like', "%$s%")->orWhere('customer_code', 'like', "%$s%")->orWhere('company_name', 'like', "%$s%")))->orderBy($r->sort ?? 'name', $r->direction === 'desc' ? 'desc' : 'asc')->paginate(15)->withQueryString();
 
         return Inertia::render('Masters/Index', ['title' => 'Data Pelanggan', 'type' => 'customer', 'rows' => $rows]);
     }
@@ -40,8 +41,13 @@ class CustomerController extends Controller
     public function destroy(Customer $customer)
     {
         $this->authorize('customers.manage');
+        if ($customer->invoices()->exists()) {
+            throw ValidationException::withMessages([
+                'delete' => 'Client tidak dapat dihapus karena masih memiliki data invoice. Hapus seluruh invoice client terlebih dahulu.',
+            ]);
+        }
         $customer->delete();
 
-        return back()->with('success','Pelanggan dinonaktifkan.');
+        return back()->with('success', 'Pelanggan dinonaktifkan.');
     }
 }

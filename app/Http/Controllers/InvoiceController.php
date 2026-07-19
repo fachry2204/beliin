@@ -105,7 +105,7 @@ class InvoiceController extends Controller
     public function show(Request $request, Invoice $invoice)
     {
         $this->authorize('view', $invoice);
-        $invoice->load(['customer', 'items', 'payments.creator:id,name', 'creator:id,name', 'shippingDeposit', 'delivery']);
+        $invoice->load(['customer', 'items', 'payments.creator:id,name', 'creator:id,name', 'shippingDeposit', 'delivery', 'combinedDocuments:id,facture_number']);
         if ($invoice->delivery?->proof_photo_path) {
             $invoice->delivery->proof_url = '/storage/'.ltrim($invoice->delivery->proof_photo_path, '/');
         }
@@ -128,6 +128,7 @@ class InvoiceController extends Controller
             'canEditInvoice' => $request->user()->can('invoices.create') && $invoice->status !== InvoiceStatus::Cancelled,
             'canDeleteInvoice' => $request->user()->hasAnyRole(['Super Admin', 'Admin'])
                 && $request->user()->can('invoices.delete'),
+            'destructiveLockReason' => $this->service->destructiveLockReason($invoice),
         ]);
     }
 

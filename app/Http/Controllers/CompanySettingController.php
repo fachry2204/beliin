@@ -4,17 +4,21 @@ namespace App\Http\Controllers;
 
 use App\Models\CompanySetting;
 use App\Services\AuditLogService;
+use App\Services\BackupService;
 use App\Services\DatabaseCleanupService;
 use App\Support\RoleAccessCatalog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
 class CompanySettingController extends Controller
 {
-    public function __construct(private AuditLogService $audit, private DatabaseCleanupService $cleanup) {}
+    public function __construct(private AuditLogService $audit, private DatabaseCleanupService $cleanup, private BackupService $backups) {}
 
     public function edit()
     {
@@ -39,6 +43,7 @@ class CompanySettingController extends Controller
             ],
             'canDeleteData' => auth()->user()->hasRole('Super Admin'),
             'cleanupCounts' => auth()->user()->hasRole('Super Admin') ? $this->cleanup->counts() : [],
+            'backups' => auth()->user()->hasRole('Super Admin') ? $this->backups->all() : [],
         ]);
     }
 
@@ -116,9 +121,80 @@ class CompanySettingController extends Controller
             'confirmation.in' => 'Ketik HAPUS DATA untuk melanjutkan.',
         ]);
 
-        $result = $this->cleanup->purge($data['scope']);
+        try {
+            $result = $this->cleanup->purge($data['scope']);
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            $reference = strtoupper(Str::random(8));
+            Log::error('Database cleanup failed.', [
+                'reference' => $reference,
+                'scope' => $data['scope'],
+                'user_id' => $request->user()->id,
+                'exception' => $exception,
+            ]);
+
+            return back()->withErrors([
+                'cleanup' => "Data belum dihapus karena terjadi kendala database. Referensi: {$reference}. Pastikan seluruh migrasi sudah dijalankan di server.",
+            ]);
+        }
+
         $deleted = $result['before'][$data['scope']] - $result['after'][$data['scope']];
 
         return back()->with('success', "Pembersihan data selesai. {$deleted} data utama telah dihapus.");
+    }
+
+    public function createBackup(Request $request)
+    {
+        $this->authorizeBackup($request);
+        $data = $request->validate(['type' => ['required', Rule::in(BackupService::TYPES)]]);
+
+        try {
+            $backup = $this->backups->create($data['type']);
+            $this->audit->record('create', 'backup', null, null, ['filename' => $backup['filename'], 'type' => $data['type']]);
+
+            return back()->with('success', 'Backup berhasil dibuat dan siap diunduh.');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors(['backup' => 'Backup gagal dibuat: '.$exception->getMessage()]);
+        }
+    }
+
+    public function updateBackupSchedule(Request $request)
+    {
+        $this->authorizeBackup($request);
+        $data = $request->validate([
+            'backup_auto_enabled' => ['required', 'boolean'],
+            'backup_auto_type' => ['required', Rule::in(BackupService::TYPES)],
+            'backup_auto_frequency' => ['required', Rule::in(['daily', 'weekly', 'monthly'])],
+            'backup_auto_time' => ['required', 'date_format:H:i'],
+            'backup_retention_count' => ['required', 'integer', 'min:1', 'max:30'],
+        ]);
+        $setting = CompanySetting::firstOrNew();
+        $setting->fill($data)->save();
+
+        return back()->with('success', 'Pengaturan backup otomatis disimpan.');
+    }
+
+    public function downloadBackup(Request $request, string $filename)
+    {
+        $this->authorizeBackup($request);
+
+        return response()->download($this->backups->path($filename), $filename, ['Content-Type' => 'application/zip']);
+    }
+
+    public function deleteBackup(Request $request, string $filename)
+    {
+        $this->authorizeBackup($request);
+        $this->backups->delete($filename);
+
+        return back()->with('success', 'Arsip backup dihapus.');
+    }
+
+    private function authorizeBackup(Request $request): void
+    {
+        $this->authorize('settings.manage');
+        abort_unless($request->user()->hasRole('Super Admin'), 403);
     }
 }

@@ -16,3 +16,5 @@ Schedule::call(function (): void {
         ->whereDate('due_date', '<', today())
         ->update(['status' => InvoiceStatus::Overdue]);
 })->dailyAt('00:05')->name('mark-overdue-invoices')->withoutOverlapping();
+
+Schedule::command('backup:run --automatic')->everyMinute()->name('automatic-data-backup')->withoutOverlapping();

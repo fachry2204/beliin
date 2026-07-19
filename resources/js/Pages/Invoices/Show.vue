@@ -9,6 +9,7 @@ import AppTextarea from "@/Components/UI/AppTextarea.vue";
 import CurrencyInput from "@/Components/UI/CurrencyInput.vue";
 import AppModal from "@/Components/UI/AppModal.vue";
 import StatusBadge from "@/Components/UI/StatusBadge.vue";
+import ActionWarningModal from "@/Components/UI/ActionWarningModal.vue";
 import { percentageText } from "@/utils/percentage";
 import { directPrint } from "@/utils/directPrint";
 interface Item {
@@ -95,12 +96,14 @@ const props = defineProps<{
     canViewCost: boolean;
     canEditInvoice: boolean;
     canDeleteInvoice: boolean;
+    destructiveLockReason?: string | null;
 }>();
 const paymentOpen = ref(false);
 const shippingOpen = ref(false);
 const editMenuOpen = ref(false);
 const documentMenuOpen = ref(false);
 const deliveryDetailOpen = ref(false);
+const actionWarning = ref("");
 const status = () =>
     typeof props.invoice.status === "string"
         ? props.invoice.status
@@ -209,13 +212,22 @@ const submitShipping = () => {
               options,
           );
 };
-const cancel = () =>
-    confirm("Batalkan invoice ini?") &&
-    router.post(route("invoices.cancel", props.invoice.id));
-const remove = () =>
-    confirm(
-        `Hapus invoice ${props.invoice.invoice_number} beserta riwayat pembayaran dan Cash Masuk terkait?`,
-    ) && router.delete(route("invoices.destroy", props.invoice.id));
+const cancel = () => {
+    if (props.destructiveLockReason) {
+        actionWarning.value = props.destructiveLockReason;
+        return;
+    }
+    if (confirm("Batalkan invoice ini?"))
+        router.post(route("invoices.cancel", props.invoice.id));
+};
+const remove = () => {
+    if (props.destructiveLockReason) {
+        actionWarning.value = props.destructiveLockReason;
+        return;
+    }
+    if (confirm(`Hapus invoice ${props.invoice.invoice_number} beserta riwayat pembayaran dan Cash Masuk terkait?`))
+        router.delete(route("invoices.destroy", props.invoice.id));
+};
 </script>
 <template>
     <Head :title="invoice.invoice_number" /><AuthenticatedLayout
@@ -603,6 +615,11 @@ const remove = () =>
                 </div>
             </form>
         </AppModal>
+        <ActionWarningModal
+            :show="Boolean(actionWarning)"
+            :message="actionWarning"
+            @close="actionWarning = ''"
+        />
         <AppModal
             :show="deliveryDetailOpen"
             title="Detail Bukti Pengiriman"

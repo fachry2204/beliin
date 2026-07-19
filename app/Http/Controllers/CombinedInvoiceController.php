@@ -5,8 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\InvoiceStatus;
 use App\Models\CombinedInvoiceDocument;
 use App\Models\CompanySetting;
-use App\Models\Customer;
 use App\Models\Courier;
+use App\Models\CourierDelivery;
+use App\Models\Customer;
 use App\Models\FactureCommission;
 use App\Models\Payment;
 use App\Services\CombinedInvoiceService;
@@ -123,6 +124,7 @@ class CombinedInvoiceController extends Controller
         $canViewProfit = $request->user()->can('profit.view');
 
         $hasFacturePayments = $combinedInvoice->payments()->exists();
+        $deletionLockReason = $this->deletionLockReason($combinedInvoice);
 
         return Inertia::render('CombinedInvoices/Show', [
             ...$this->combinedData($combinedInvoice, $canViewProfit),
@@ -131,7 +133,8 @@ class CombinedInvoiceController extends Controller
             'canEditDueDate' => $request->user()->can('invoices.create') && $combinedInvoice->status === 'open',
             'canEdit' => $request->user()->can('invoices.create') && ! $hasFacturePayments && $combinedInvoice->status === 'open',
             'canDelete' => $request->user()->can('invoices.delete'),
-            'deletionLocked' => $hasFacturePayments || $combinedInvoice->status !== 'open',
+            'deletionLocked' => $deletionLockReason !== null,
+            'deletionLockReason' => $deletionLockReason,
             'today' => today()->toDateString(),
             'defaultDueDate' => today()->addWeek()->toDateString(),
             'commissionWarningPercentage' => (float) (CompanySetting::first()?->commission_margin_warning_percentage ?? 10),
@@ -211,7 +214,7 @@ class CombinedInvoiceController extends Controller
     public function destroy(CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.delete');
-        $this->ensureEditable($combinedInvoice);
+        abort_if($reason = $this->deletionLockReason($combinedInvoice), 422, $reason);
         $combinedInvoice->delete();
 
         return redirect()->route('combined-invoices.index')->with('success', 'Faktur berhasil dihapus. Invoice tetap tersimpan.');
@@ -235,9 +238,9 @@ class CombinedInvoiceController extends Controller
         $this->authorize('invoices.view');
 
         return view('combined-invoices.print', [
-              ...$this->combinedData($combinedInvoice, false),
-              'company' => CompanySetting::first(),
-              'autoPrint' => true,
+            ...$this->combinedData($combinedInvoice, false),
+            'company' => CompanySetting::first(),
+            'autoPrint' => true,
         ]);
     }
 
@@ -247,7 +250,7 @@ class CombinedInvoiceController extends Controller
         $data = [...$this->combinedData($combinedInvoice, false), 'company' => CompanySetting::first()];
 
         return Pdf::loadView('combined-invoices.print', $data)
-              ->setPaper(PrintPaper::dompdfPaper($data['company']), PrintPaper::dompdfOrientation($data['company']))
+            ->setPaper(PrintPaper::dompdfPaper($data['company']), PrintPaper::dompdfOrientation($data['company']))
             ->download(str_replace('/', '-', $data['document']->facture_number).'.pdf');
     }
 
@@ -408,6 +411,30 @@ class CombinedInvoiceController extends Controller
     private function ensureEditable(CombinedInvoiceDocument $document): void
     {
         abort_if($document->status !== 'open' || $document->payments()->exists(), 422, 'Faktur yang sudah menerima pembayaran tidak dapat diedit atau dihapus.');
+    }
+
+    private function deletionLockReason(CombinedInvoiceDocument $document): ?string
+    {
+        $reasons = [];
+
+        if ($document->payments()->exists() || $document->status !== 'open') {
+            $reasons[] = 'Faktur sudah memiliki pembayaran';
+        }
+
+        $deliveryStarted = $document->invoices()
+            ->whereHas('delivery', fn (Builder $query) => $query->whereIn('status', [
+                CourierDelivery::ACCEPTED,
+                CourierDelivery::IN_TRANSIT,
+                CourierDelivery::DELIVERED,
+            ]))->exists();
+
+        if ($deliveryStarted) {
+            $reasons[] = 'kurir sudah mengambil atau menjalankan tugas pengiriman pada invoice di dalam Faktur';
+        }
+
+        return $reasons === []
+            ? null
+            : 'Faktur tidak dapat dihapus karena '.implode(' dan ', $reasons).'.';
     }
 
     private function outstanding($query)

@@ -8,6 +8,7 @@ import AppSelect from "@/Components/UI/AppSelect.vue";
 import AppTextarea from "@/Components/UI/AppTextarea.vue";
 import AppModal from "@/Components/UI/AppModal.vue";
 import StatusBadge from "@/Components/UI/StatusBadge.vue";
+import ActionWarningModal from "@/Components/UI/ActionWarningModal.vue";
 import { percentageText } from "@/utils/percentage";
 import { directPrint } from "@/utils/directPrint";
 
@@ -73,6 +74,7 @@ const props = defineProps<{
     canEdit: boolean;
     canDelete: boolean;
     deletionLocked: boolean;
+    deletionLockReason?: string | null;
     today: string;
     defaultDueDate: string;
     commissionWarningPercentage: number;
@@ -81,6 +83,7 @@ const paymentOpen = ref(false);
 const dueDateOpen = ref(false);
 const editPaymentOpen = ref(false);
 const editingPayment = ref<PaymentRecord | null>(null);
+const actionWarning = ref("");
 const payment = useForm({
     payment_date: props.today,
     amount: props.totals.remaining_total,
@@ -143,10 +146,14 @@ const submitPaymentCorrection = () => {
         },
     );
 };
-const remove = () =>
-    confirm(
-        `Hapus Faktur ${props.document.facture_number}? Invoice di dalamnya tidak akan dihapus.`,
-    ) && router.delete(route("combined-invoices.destroy", props.document.id));
+const remove = () => {
+    if (props.deletionLockReason) {
+        actionWarning.value = props.deletionLockReason;
+        return;
+    }
+    if (confirm(`Hapus Faktur ${props.document.facture_number}? Invoice di dalamnya tidak akan dihapus.`))
+        router.delete(route("combined-invoices.destroy", props.document.id));
+};
 const printFacture = () =>
     directPrint(route("combined-invoices.print", props.document.id));
 const money = (value: string | number) =>
@@ -239,10 +246,9 @@ const commissionWarning = computed(
                 ><AppButton
                     v-if="canDelete"
                     variant="danger"
-                    :disabled="deletionLocked"
                     :title="
                         deletionLocked
-                            ? 'Faktur yang sudah menerima pembayaran tidak dapat dihapus'
+                            ? deletionLockReason || 'Faktur tidak dapat dihapus'
                             : 'Hapus Faktur'
                     "
                     @click="remove"
@@ -252,6 +258,12 @@ const commissionWarning = computed(
                 >
             </div>
         </div>
+
+        <ActionWarningModal
+            :show="Boolean(actionWarning)"
+            :message="actionWarning"
+            @close="actionWarning = ''"
+        />
 
         <section class="panel mb-5 p-5">
             <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-5">

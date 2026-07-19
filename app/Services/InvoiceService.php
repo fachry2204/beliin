@@ -191,6 +191,7 @@ class InvoiceService
         return DB::transaction(function () use ($invoice) {
             $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
             abort_if($invoice->status === InvoiceStatus::Cancelled, 422, 'Invoice sudah dibatalkan.');
+            abort_if($reason = $this->destructiveLockReason($invoice), 422, $reason);
             $old = $invoice->load('payments')->toArray();
             $this->deletePaymentHistory($invoice);
             $this->cash->deleteInvoiceShipping($invoice);
@@ -213,6 +214,7 @@ class InvoiceService
     {
         DB::transaction(function () use ($invoice) {
             $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+            abort_if($reason = $this->destructiveLockReason($invoice), 422, $reason);
             $old = $invoice->load('payments')->toArray();
             $this->deletePaymentHistory($invoice);
             $this->cash->deleteInvoiceShipping($invoice);
@@ -221,6 +223,30 @@ class InvoiceService
             $this->combinedInvoices->closeIfSettled($invoice->customer);
             Cache::forget('dashboard.metrics');
         });
+    }
+
+    public function destructiveLockReason(Invoice $invoice): ?string
+    {
+        $reasons = [];
+        $deliveryStarted = $invoice->delivery()
+            ->whereIn('status', [
+                CourierDelivery::ACCEPTED,
+                CourierDelivery::IN_TRANSIT,
+                CourierDelivery::DELIVERED,
+            ])->exists();
+
+        if ($deliveryStarted) {
+            $reasons[] = 'kurir sudah mengambil atau menjalankan tugas pengiriman';
+        }
+
+        $factureNumbers = $invoice->combinedDocuments()->pluck('facture_number');
+        if ($factureNumbers->isNotEmpty()) {
+            $reasons[] = 'invoice sudah masuk Faktur '.$factureNumbers->join(', ');
+        }
+
+        return $reasons === []
+            ? null
+            : 'Invoice tidak dapat dibatalkan atau dihapus karena '.implode(' dan ', $reasons).'. Selesaikan atau lepaskan keterkaitan data tersebut terlebih dahulu.';
     }
 
     private function deletePaymentHistory(Invoice $invoice): void

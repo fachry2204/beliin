@@ -94,6 +94,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/company', [CompanySettingController::class, 'edit'])->name('company.edit');
     Route::put('settings/company', [CompanySettingController::class, 'update'])->name('company.update');
     Route::delete('settings/company/data', [CompanySettingController::class, 'purgeData'])->name('company.data.purge');
+    Route::post('settings/company/backups', [CompanySettingController::class, 'createBackup'])->name('company.backups.store');
+    Route::put('settings/company/backups/schedule', [CompanySettingController::class, 'updateBackupSchedule'])->name('company.backups.schedule');
+    Route::get('settings/company/backups/{filename}', [CompanySettingController::class, 'downloadBackup'])->name('company.backups.download');
+    Route::delete('settings/company/backups/{filename}', [CompanySettingController::class, 'deleteBackup'])->name('company.backups.destroy');
     Route::put('settings/company/roles/{role}', [CompanySettingController::class, 'updateRolePermissions'])->name('company.roles.update');
     Route::resource('users', UserController::class)->only(['index', 'store', 'update']);
     Route::get('activity-logs', ActivityLogController::class)->name('activity.index');

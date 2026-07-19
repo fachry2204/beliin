@@ -32,6 +32,20 @@ interface Company {
     printer_type?: string;
     printer_paper_size?: string;
     printer_orientation?: string;
+    backup_auto_enabled?: boolean;
+    backup_auto_type?: string;
+    backup_auto_frequency?: string;
+    backup_auto_time?: string;
+    backup_retention_count?: number;
+    backup_last_run_at?: string | null;
+    backup_last_error?: string | null;
+}
+interface BackupItem {
+    filename: string;
+    type: "full" | "database";
+    automatic: boolean;
+    size: number;
+    created_at: string;
 }
 interface PermissionItem {
     name: string;
@@ -52,9 +66,10 @@ const props = defineProps<{
     roleAccess: { groups: PermissionGroup[]; roles: RoleAccess[] };
     canDeleteData: boolean;
     cleanupCounts: Record<string, number>;
+    backups: BackupItem[];
 }>();
 const c = props.setting ?? {};
-const activeTab = ref<"company" | "printer" | "roles" | "cleanup">("company");
+const activeTab = ref<"company" | "printer" | "roles" | "backup" | "cleanup">("company");
 const savingRole = ref<number | null>(null);
 const rolePermissions = reactive<Record<number, string[]>>(
     Object.fromEntries(
@@ -143,16 +158,16 @@ const saveRole = (role: RoleAccess) => {
     );
 };
 const cleanupOptions = [
-    { key: "customers", label: "Data Client", description: "Menghapus seluruh client beserta invoice, faktur, pembayaran, tugas pengiriman, dan transaksi kas otomatis yang bergantung pada client. Data barang tetap disimpan." },
-    { key: "invoices", label: "Data Invoice", description: "Menghapus seluruh invoice, pembayaran, faktur yang bergantung pada invoice, tugas kurir, dan transaksi kas otomatis terkait." },
-    { key: "factures", label: "Data Faktur", description: "Menghapus faktur, komisi, ongkir faktur, dan relasinya. Invoice serta pembayaran invoice tetap disimpan." },
+    { key: "customers", label: "Data Client", description: "Menghapus seluruh client hanya jika tidak ada data invoice. Data barang tetap disimpan." },
+    { key: "invoices", label: "Data Invoice", description: "Menghapus seluruh invoice dan data terkait. Proses diblokir jika pengiriman sudah berjalan atau invoice masih berada di Faktur." },
+    { key: "factures", label: "Data Faktur", description: "Menghapus Faktur hanya jika belum memiliki pembayaran dan pengiriman invoice di dalamnya belum berjalan." },
     { key: "shipping", label: "Data Ongkir", description: "Menghapus deposito ongkir, Cash Keluar ongkir, tugas dan foto pengiriman, lalu mengosongkan kurir serta ongkir pada invoice/faktur." },
     { key: "cash_in", label: "Data Cash Masuk", description: "Menghapus pembayaran dan Cash Masuk, mengembalikan invoice menjadi belum dibayar, serta menghapus komisi faktur terkait pembayaran." },
     { key: "cash_out", label: "Data Cash Keluar", description: "Menghapus seluruh Cash Keluar. Ongkir dan komisi yang pernah dibayar dikembalikan menjadi belum dibayar." },
 ] as const;
 const cleanupScope = ref<string | null>(null);
 const selectedCleanup = computed(() => cleanupOptions.find((item) => item.key === cleanupScope.value));
-const cleanupForm = useForm({ scope: "", password: "", confirmation: "" });
+const cleanupForm = useForm({ scope: "", password: "", confirmation: "", cleanup: "" });
 const openCleanup = (scope: string) => {
     cleanupScope.value = scope;
     cleanupForm.reset();
@@ -169,6 +184,32 @@ const purgeData = () => cleanupForm.delete(route("company.data.purge"), {
     preserveScroll: true,
     onSuccess: closeCleanup,
 });
+const backupForm = useForm({ type: "database", backup: "" });
+const createBackup = (type: "full" | "database") => {
+    backupForm.type = type;
+    backupForm.post(route("company.backups.store"), { preserveScroll: true });
+};
+const scheduleForm = useForm({
+    backup_auto_enabled: c.backup_auto_enabled ?? false,
+    backup_auto_type: c.backup_auto_type ?? "database",
+    backup_auto_frequency: c.backup_auto_frequency ?? "daily",
+    backup_auto_time: c.backup_auto_time ?? "01:00",
+    backup_retention_count: c.backup_retention_count ?? 7,
+});
+const saveBackupSchedule = () =>
+    scheduleForm.put(route("company.backups.schedule"), { preserveScroll: true });
+const deleteBackup = (filename: string) => {
+    if (!window.confirm(`Hapus arsip backup ${filename}?`)) return;
+    router.delete(route("company.backups.destroy", filename), { preserveScroll: true });
+};
+const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+};
+const formatDateTime = (value: string) =>
+    new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 </script>
 <template>
     <Head title="Profil Perusahaan" /><AuthenticatedLayout
@@ -210,6 +251,17 @@ const purgeData = () => cleanupForm.delete(route("company.data.purge"), {
                 @click="activeTab = 'roles'"
             >
                 Akses Role
+            </button>
+            <button
+                v-if="props.canDeleteData"
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'backup'"
+                class="border-b-2 px-4 py-3 text-sm font-semibold transition"
+                :class="activeTab === 'backup' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-emerald-600'"
+                @click="activeTab = 'backup'"
+            >
+                Backup Data
             </button>
             <button
                 v-if="props.canDeleteData"
@@ -537,6 +589,90 @@ const purgeData = () => cleanupForm.delete(route("company.data.purge"), {
             </article>
         </section>
 
+        <section v-if="props.canDeleteData" v-show="activeTab === 'backup'" class="space-y-5">
+            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                <h2 class="text-lg font-bold text-emerald-900">Backup Data</h2>
+                <p class="mt-2 text-sm leading-6 text-emerald-800">
+                    Arsip disimpan sebagai ZIP di penyimpanan privat server. Unduh dan simpan salinan di lokasi lain agar data tetap aman jika server bermasalah.
+                </p>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+                <article class="panel flex flex-col justify-between gap-5 p-5">
+                    <div>
+                        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-sky-100 text-xl text-sky-700">▣</div>
+                        <h3 class="font-bold text-slate-900">Backup Semua Data</h3>
+                        <p class="mt-2 text-sm leading-6 text-slate-500">Berisi file aplikasi, file upload, konfigurasi, dan dump database SQL. Folder vendor, cache, log, dan backup lama tidak disalin.</p>
+                    </div>
+                    <AppButton type="button" class="self-end" :disabled="backupForm.processing" @click="createBackup('full')">
+                        {{ backupForm.processing && backupForm.type === 'full' ? 'Membuat ZIP...' : 'Backup Seluruhnya' }}
+                    </AppButton>
+                </article>
+                <article class="panel flex flex-col justify-between gap-5 p-5">
+                    <div>
+                        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-xl text-violet-700">⌁</div>
+                        <h3 class="font-bold text-slate-900">Backup Database</h3>
+                        <p class="mt-2 text-sm leading-6 text-slate-500">Berisi dump SQL seluruh tabel dan data MySQL. Pilihan ini lebih kecil dan cepat untuk backup rutin.</p>
+                    </div>
+                    <AppButton type="button" class="self-end" :disabled="backupForm.processing" @click="createBackup('database')">
+                        {{ backupForm.processing && backupForm.type === 'database' ? 'Membuat ZIP...' : 'Backup Database' }}
+                    </AppButton>
+                </article>
+            </div>
+
+            <div v-if="backupForm.errors.backup" role="alert" class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+                {{ backupForm.errors.backup }}
+            </div>
+
+            <form class="panel p-5" @submit.prevent="saveBackupSchedule">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h3 class="font-bold text-slate-900">Backup Otomatis</h3>
+                        <p class="mt-1 text-sm text-slate-500">Scheduler server akan membuat backup sesuai jadwal dan menghapus arsip lama berdasarkan jumlah penyimpanan.</p>
+                    </div>
+                    <label class="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                        <input v-model="scheduleForm.backup_auto_enabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                        Aktifkan backup otomatis
+                    </label>
+                </div>
+                <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <label><span class="label">Jenis Backup</span><select v-model="scheduleForm.backup_auto_type" class="w-full rounded-lg border-slate-300 text-sm"><option value="full">Seluruhnya</option><option value="database">Database</option></select></label>
+                    <label><span class="label">Frekuensi</span><select v-model="scheduleForm.backup_auto_frequency" class="w-full rounded-lg border-slate-300 text-sm"><option value="daily">Setiap Hari</option><option value="weekly">Setiap 7 Hari</option><option value="monthly">Setiap Bulan</option></select></label>
+                    <label><span class="label">Jam Backup</span><AppInput v-model="scheduleForm.backup_auto_time" type="time" /></label>
+                    <label><span class="label">Jumlah Arsip Disimpan</span><AppInput v-model="scheduleForm.backup_retention_count" type="number" min="1" max="30" /></label>
+                </div>
+                <p v-if="Object.keys(scheduleForm.errors).length" class="mt-3 text-sm text-red-600">{{ Object.values(scheduleForm.errors)[0] }}</p>
+                <div v-if="c.backup_last_error" class="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Backup otomatis terakhir gagal: {{ c.backup_last_error }}</div>
+                <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                    <strong>Plesk:</strong> pastikan Scheduled Task menjalankan <code class="rounded bg-white px-1.5 py-1">php artisan schedule:run</code> setiap 1 menit. Tanpa task ini, backup manual tetap berjalan tetapi backup otomatis tidak akan dijalankan.
+                </div>
+                <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p class="text-xs text-slate-500">Terakhir dijalankan: {{ c.backup_last_run_at ? formatDateTime(c.backup_last_run_at) : 'Belum pernah' }}</p>
+                    <AppButton type="submit" :disabled="scheduleForm.processing">{{ scheduleForm.processing ? 'Menyimpan...' : 'Simpan Backup Otomatis' }}</AppButton>
+                </div>
+            </form>
+
+            <div class="panel overflow-hidden">
+                <div class="border-b border-slate-200 px-5 py-4"><h3 class="font-bold text-slate-900">Riwayat Backup</h3><p class="mt-1 text-sm text-slate-500">Arsip hanya dapat diakses oleh Super Admin.</p></div>
+                <div v-if="!props.backups.length" class="p-8 text-center text-sm text-slate-500">Belum ada file backup.</div>
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full min-w-[760px] text-left text-sm">
+                        <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-5 py-3">Nama File</th><th class="px-5 py-3">Jenis</th><th class="px-5 py-3">Sumber</th><th class="px-5 py-3">Ukuran</th><th class="px-5 py-3">Dibuat</th><th class="px-5 py-3 text-right">Aksi</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr v-for="item in props.backups" :key="item.filename">
+                                <td class="px-5 py-4 font-medium text-slate-800">{{ item.filename }}</td>
+                                <td class="px-5 py-4">{{ item.type === 'full' ? 'Seluruhnya' : 'Database' }}</td>
+                                <td class="px-5 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="item.automatic ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'">{{ item.automatic ? 'Otomatis' : 'Manual' }}</span></td>
+                                <td class="px-5 py-4">{{ formatBytes(item.size) }}</td>
+                                <td class="px-5 py-4">{{ formatDateTime(item.created_at) }}</td>
+                                <td class="px-5 py-4"><div class="flex justify-end gap-2"><a :href="route('company.backups.download', item.filename)" class="rounded-lg border border-sky-300 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50">Unduh</a><button type="button" class="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50" @click="deleteBackup(item.filename)">Hapus</button></div></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <section v-if="props.canDeleteData" v-show="activeTab === 'cleanup'" class="space-y-5">
             <div class="rounded-xl border border-red-200 bg-red-50 p-5">
                 <h2 class="text-lg font-bold text-red-800">Hapus Isi Database</h2>
@@ -583,6 +719,9 @@ const purgeData = () => cleanupForm.delete(route("company.data.purge"), {
                     <span v-if="cleanupForm.errors.confirmation" class="mt-1 block text-xs text-red-600">{{ cleanupForm.errors.confirmation }}</span>
                 </label>
                 <span v-if="cleanupForm.errors.scope" class="block text-xs text-red-600">{{ cleanupForm.errors.scope }}</span>
+                <div v-if="cleanupForm.errors.cleanup" role="alert" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {{ cleanupForm.errors.cleanup }}
+                </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700" :disabled="cleanupForm.processing" @click="closeCleanup">Batal</button>
                     <button

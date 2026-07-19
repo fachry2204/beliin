@@ -12,6 +12,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -67,21 +68,45 @@ class DatabaseCleanupService
 
     private function purgeCustomers(): array
     {
-        $files = $this->purgeInvoices();
+        if (Invoice::query()->exists()) {
+            throw ValidationException::withMessages([
+                'scope' => 'Data Client tidak dapat dihapus karena masih ada data invoice. Hapus Data Invoice terlebih dahulu.',
+            ]);
+        }
+
         Customer::withTrashed()->forceDelete();
 
-        return $files;
+        return [];
     }
 
     private function purgeInvoices(): array
     {
+        if (Invoice::query()->whereHas('delivery', fn ($query) => $query->whereIn('status', [
+            CourierDelivery::ACCEPTED,
+            CourierDelivery::IN_TRANSIT,
+            CourierDelivery::DELIVERED,
+        ]))->exists()) {
+            throw ValidationException::withMessages([
+                'scope' => 'Data Invoice tidak dapat dihapus karena ada kurir yang sudah mengambil atau menjalankan tugas pengiriman. Hapus Data Ongkir terlebih dahulu.',
+            ]);
+        }
+
+        if (CombinedInvoiceDocument::query()->exists()) {
+            throw ValidationException::withMessages([
+                'scope' => 'Data Invoice tidak dapat dihapus karena masih ada Faktur. Hapus Data Faktur terlebih dahulu.',
+            ]);
+        }
+
         $files = $this->proofFiles();
         $this->deleteCommissionCash();
         CashTransaction::withTrashed()
-            ->where(fn ($query) => $query
-                ->whereNotNull('payment_id')
-                ->orWhereNotNull('invoice_id')
-                ->orWhereNotNull('combined_invoice_document_id'))
+            ->where(function ($query) {
+                $query->whereNotNull('payment_id')->orWhereNotNull('invoice_id');
+
+                if (Schema::hasColumn('cash_transactions', 'combined_invoice_document_id')) {
+                    $query->orWhereNotNull('combined_invoice_document_id');
+                }
+            })
             ->forceDelete();
         FactureCommission::query()->delete();
         Payment::query()->delete();
@@ -96,6 +121,23 @@ class DatabaseCleanupService
 
     private function purgeFactures(): array
     {
+        if (Payment::query()->whereNotNull('combined_invoice_document_id')->exists()
+            || CombinedInvoiceDocument::query()->where('status', '!=', 'open')->exists()) {
+            throw ValidationException::withMessages([
+                'scope' => 'Data Faktur tidak dapat dihapus karena sudah memiliki pembayaran. Hapus Data Cash Masuk terlebih dahulu.',
+            ]);
+        }
+
+        if (CombinedInvoiceDocument::query()->whereHas('invoices.delivery', fn ($query) => $query->whereIn('status', [
+            CourierDelivery::ACCEPTED,
+            CourierDelivery::IN_TRANSIT,
+            CourierDelivery::DELIVERED,
+        ]))->exists()) {
+            throw ValidationException::withMessages([
+                'scope' => 'Data Faktur tidak dapat dihapus karena kurir sudah menjalankan pengiriman pada invoice di dalam Faktur. Hapus Data Ongkir terlebih dahulu.',
+            ]);
+        }
+
         $paymentIds = Payment::query()->whereNotNull('combined_invoice_document_id')->pluck('id');
         Payment::query()->whereIn('id', $paymentIds)->update(['combined_invoice_document_id' => null]);
         CashTransaction::withTrashed()->whereIn('payment_id', $paymentIds)->get()->each(function (CashTransaction $cash) {
@@ -108,7 +150,9 @@ class DatabaseCleanupService
         });
 
         $this->deleteCommissionCash();
-        CashTransaction::withTrashed()->whereNotNull('combined_invoice_document_id')->forceDelete();
+        if (Schema::hasColumn('cash_transactions', 'combined_invoice_document_id')) {
+            CashTransaction::withTrashed()->whereNotNull('combined_invoice_document_id')->forceDelete();
+        }
         FactureCommission::query()->delete();
         DB::table('combined_invoice_document_invoice')->delete();
         CombinedInvoiceDocument::query()->delete();
@@ -129,7 +173,15 @@ class DatabaseCleanupService
         CourierShippingDeposit::query()->delete();
         CourierDelivery::query()->delete();
         Invoice::query()->update(['courier_id' => null, 'courier_name' => null, 'shipping_cost' => 0]);
-        CombinedInvoiceDocument::query()->update(['courier_id' => null, 'courier_name' => null, 'shipping_cost' => 0]);
+        $factureShippingReset = collect([
+            'courier_id' => null,
+            'courier_name' => null,
+            'shipping_cost' => 0,
+        ])->filter(fn ($value, $column) => Schema::hasColumn('combined_invoice_documents', $column))->all();
+
+        if ($factureShippingReset !== []) {
+            CombinedInvoiceDocument::query()->update($factureShippingReset);
+        }
 
         return $files;
     }
