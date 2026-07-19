@@ -114,6 +114,10 @@ const money = (v: string | number) =>
         currency: "IDR",
         maximumFractionDigits: 0,
     }).format(Number(v));
+const quantityText = (value: string | number) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? String(numeric) : String(value ?? "");
+};
 const deliverySteps = [
     {
         key: "pending",
@@ -390,7 +394,7 @@ const remove = () => {
                                         {{ money(item.purchase_price ?? 0) }}
                                     </td>
                                     <td>{{ money(item.selling_price) }}</td>
-                                    <td>{{ item.quantity }}</td>
+                                    <td>{{ quantityText(item.quantity) }}</td>
                                     <td>{{ item.unit_snapshot }}</td>
                                     <td class="font-semibold">
                                         {{ money(item.line_subtotal) }}
