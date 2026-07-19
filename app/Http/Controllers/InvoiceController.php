@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Http\Requests\InvoiceRequest;
 use App\Models\CompanySetting;
 use App\Models\Courier;
+use App\Models\CourierDelivery;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Product;
@@ -14,6 +15,7 @@ use App\Services\InvoiceService;
 use App\Support\PrintPaper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class InvoiceController extends Controller
@@ -155,6 +157,13 @@ class InvoiceController extends Controller
             'courier_id' => ['required', 'exists:couriers,id'],
             'shipping_cost' => ['required', 'numeric', 'min:0'],
             'shipping_paid_now' => ['required', 'boolean'],
+            'delivery_status' => ['nullable', Rule::in([
+                CourierDelivery::PENDING,
+                CourierDelivery::ACCEPTED,
+                CourierDelivery::IN_TRANSIT,
+                CourierDelivery::DELIVERED,
+                CourierDelivery::CANCELLED,
+            ])],
         ]);
 
         $this->service->updateShipping(
@@ -163,9 +172,10 @@ class InvoiceController extends Controller
             (int) $data['courier_id'],
             $data['shipping_cost'],
             (bool) $data['shipping_paid_now'],
+            $data['delivery_status'] ?? null,
         );
 
-        return back()->with('success', 'Kurir dan ongkir invoice berhasil diperbarui.');
+        return back()->with('success', 'Kurir, ongkir, dan status pengiriman berhasil diperbarui.');
     }
 
     public function cancel(Request $request, Invoice $invoice)

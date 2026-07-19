@@ -11,6 +11,7 @@ import InvoiceItemTable, {
     type ProductOption,
 } from "@/Components/Invoice/InvoiceItemTable.vue";
 import InvoiceSummary from "@/Components/Invoice/InvoiceSummary.vue";
+import InvoiceCalculator from "@/Components/Invoice/InvoiceCalculator.vue";
 interface Customer {
     id: number;
     name: string;
@@ -164,6 +165,7 @@ const tax = computed(() =>
 );
 const grand = computed(() => taxBase.value + tax.value);
 const priceValidationError = ref("");
+const calculatorOpen = ref(false);
 const hasInvalidSellingPrice = computed(() =>
     form.items.some(
         (item) =>
@@ -213,6 +215,13 @@ const submit = () => {
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
+                    <AppButton variant="secondary" @click="calculatorOpen = true">
+                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <rect x="4" y="2.5" width="16" height="19" rx="2" />
+                            <path d="M7.5 6.5h9M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01" stroke-linecap="round" />
+                        </svg>
+                        Calculator
+                    </AppButton>
                     <Link v-if="initial" :href="route('invoices.show', initial.id)">
                         <AppButton variant="secondary">Batal Edit</AppButton>
                     </Link>
@@ -342,6 +351,8 @@ const submit = () => {
                     {{ priceValidationError || Object.values(form.errors)[0] }}
                 </div>
             </section>
-        </form></AuthenticatedLayout
+        </form>
+        <InvoiceCalculator :show="calculatorOpen" @close="calculatorOpen = false" />
+    </AuthenticatedLayout
     >
 </template>

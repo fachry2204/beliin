@@ -5,6 +5,7 @@ import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import AppButton from "@/Components/UI/AppButton.vue";
 import AppInput from "@/Components/UI/AppInput.vue";
 import AppTextarea from "@/Components/UI/AppTextarea.vue";
+import AppModal from "@/Components/UI/AppModal.vue";
 interface Company {
     id?: number;
     company_name?: string;
@@ -49,9 +50,11 @@ interface RoleAccess {
 const props = defineProps<{
     setting: Company | null;
     roleAccess: { groups: PermissionGroup[]; roles: RoleAccess[] };
+    canDeleteData: boolean;
+    cleanupCounts: Record<string, number>;
 }>();
 const c = props.setting ?? {};
-const activeTab = ref<"company" | "printer" | "roles">("company");
+const activeTab = ref<"company" | "printer" | "roles" | "cleanup">("company");
 const savingRole = ref<number | null>(null);
 const rolePermissions = reactive<Record<number, string[]>>(
     Object.fromEntries(
@@ -139,6 +142,33 @@ const saveRole = (role: RoleAccess) => {
         },
     );
 };
+const cleanupOptions = [
+    { key: "customers", label: "Data Client", description: "Menghapus seluruh client beserta invoice, faktur, pembayaran, tugas pengiriman, dan transaksi kas otomatis yang bergantung pada client. Data barang tetap disimpan." },
+    { key: "invoices", label: "Data Invoice", description: "Menghapus seluruh invoice, pembayaran, faktur yang bergantung pada invoice, tugas kurir, dan transaksi kas otomatis terkait." },
+    { key: "factures", label: "Data Faktur", description: "Menghapus faktur, komisi, ongkir faktur, dan relasinya. Invoice serta pembayaran invoice tetap disimpan." },
+    { key: "shipping", label: "Data Ongkir", description: "Menghapus deposito ongkir, Cash Keluar ongkir, tugas dan foto pengiriman, lalu mengosongkan kurir serta ongkir pada invoice/faktur." },
+    { key: "cash_in", label: "Data Cash Masuk", description: "Menghapus pembayaran dan Cash Masuk, mengembalikan invoice menjadi belum dibayar, serta menghapus komisi faktur terkait pembayaran." },
+    { key: "cash_out", label: "Data Cash Keluar", description: "Menghapus seluruh Cash Keluar. Ongkir dan komisi yang pernah dibayar dikembalikan menjadi belum dibayar." },
+] as const;
+const cleanupScope = ref<string | null>(null);
+const selectedCleanup = computed(() => cleanupOptions.find((item) => item.key === cleanupScope.value));
+const cleanupForm = useForm({ scope: "", password: "", confirmation: "" });
+const openCleanup = (scope: string) => {
+    cleanupScope.value = scope;
+    cleanupForm.reset();
+    cleanupForm.clearErrors();
+    cleanupForm.scope = scope;
+};
+const closeCleanup = () => {
+    if (cleanupForm.processing) return;
+    cleanupScope.value = null;
+    cleanupForm.reset();
+    cleanupForm.clearErrors();
+};
+const purgeData = () => cleanupForm.delete(route("company.data.purge"), {
+    preserveScroll: true,
+    onSuccess: closeCleanup,
+});
 </script>
 <template>
     <Head title="Profil Perusahaan" /><AuthenticatedLayout
@@ -180,6 +210,17 @@ const saveRole = (role: RoleAccess) => {
                 @click="activeTab = 'roles'"
             >
                 Akses Role
+            </button>
+            <button
+                v-if="props.canDeleteData"
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'cleanup'"
+                class="border-b-2 px-4 py-3 text-sm font-semibold transition"
+                :class="activeTab === 'cleanup' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:text-red-600'"
+                @click="activeTab = 'cleanup'"
+            >
+                Hapus Data
             </button>
         </div>
         <form v-show="activeTab === 'company'" class="space-y-5" @submit.prevent="submit">
@@ -495,6 +536,65 @@ const saveRole = (role: RoleAccess) => {
                 </div>
             </article>
         </section>
+
+        <section v-if="props.canDeleteData" v-show="activeTab === 'cleanup'" class="space-y-5">
+            <div class="rounded-xl border border-red-200 bg-red-50 p-5">
+                <h2 class="text-lg font-bold text-red-800">Hapus Isi Database</h2>
+                <p class="mt-2 text-sm leading-6 text-red-700">
+                    Tindakan ini permanen dan tidak dapat dibatalkan. Buat backup database sebelum menghapus data produksi.
+                    Data perusahaan, pelanggan, barang, pengguna, role, dan pengaturan tidak ikut dihapus.
+                </p>
+            </div>
+            <div class="grid gap-4 lg:grid-cols-2">
+                <article v-for="item in cleanupOptions" :key="item.key" class="panel flex flex-col justify-between gap-5 p-5">
+                    <div>
+                        <div class="flex items-start justify-between gap-3">
+                            <h3 class="font-bold text-slate-900">{{ item.label }}</h3>
+                            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                {{ props.cleanupCounts[item.key] ?? 0 }} data
+                            </span>
+                        </div>
+                        <p class="mt-2 text-sm leading-6 text-slate-500">{{ item.description }}</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="self-end rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                        @click="openCleanup(item.key)"
+                    >
+                        Hapus {{ item.label }}
+                    </button>
+                </article>
+            </div>
+        </section>
+
+        <AppModal :show="cleanupScope !== null" :title="`Konfirmasi Hapus ${selectedCleanup?.label ?? 'Data'}`" @close="closeCleanup">
+            <form class="space-y-4" @submit.prevent="purgeData">
+                <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700">
+                    {{ selectedCleanup?.description }} Tindakan ini tidak dapat dibatalkan.
+                </div>
+                <label class="block">
+                    <span class="label">Password akun Super Admin</span>
+                    <AppInput v-model="cleanupForm.password" type="password" autocomplete="current-password" required />
+                    <span v-if="cleanupForm.errors.password" class="mt-1 block text-xs text-red-600">{{ cleanupForm.errors.password }}</span>
+                </label>
+                <label class="block">
+                    <span class="label">Ketik <strong>HAPUS DATA</strong> untuk melanjutkan</span>
+                    <AppInput v-model="cleanupForm.confirmation" autocomplete="off" placeholder="HAPUS DATA" required />
+                    <span v-if="cleanupForm.errors.confirmation" class="mt-1 block text-xs text-red-600">{{ cleanupForm.errors.confirmation }}</span>
+                </label>
+                <span v-if="cleanupForm.errors.scope" class="block text-xs text-red-600">{{ cleanupForm.errors.scope }}</span>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700" :disabled="cleanupForm.processing" @click="closeCleanup">Batal</button>
+                    <button
+                        type="submit"
+                        class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="cleanupForm.processing || cleanupForm.confirmation !== 'HAPUS DATA' || !cleanupForm.password"
+                    >
+                        {{ cleanupForm.processing ? 'Menghapus...' : 'Hapus Permanen' }}
+                    </button>
+                </div>
+            </form>
+        </AppModal>
         </AuthenticatedLayout
     >
 </template>

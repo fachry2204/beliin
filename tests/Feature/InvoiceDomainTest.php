@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\CashTransactionService;
 use App\Services\CombinedInvoiceService;
+use App\Services\DatabaseCleanupService;
 use App\Services\IncomingGoodsService;
 use App\Services\InvoiceCalculationService;
 use App\Services\InvoiceNumberService;
@@ -614,6 +615,61 @@ class InvoiceDomainTest extends TestCase
         $invoice->refresh();
         $this->assertSame($this->courier->id, $invoice->courier_id);
         $this->assertSame($originalShippingCost, $invoice->shipping_cost);
+    }
+
+    public function test_admin_can_edit_invoice_delivery_status_and_timeline(): void
+    {
+        $invoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($invoice, $this->admin->id, false);
+
+        $this->actingAs($this->admin)
+            ->put(route('invoices.shipping.update', $invoice), [
+                'courier_id' => $this->courier->id,
+                'shipping_cost' => 50000,
+                'shipping_paid_now' => false,
+                'delivery_status' => CourierDelivery::IN_TRANSIT,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $delivery = $invoice->delivery()->firstOrFail();
+        $this->assertSame(CourierDelivery::IN_TRANSIT, $delivery->status);
+        $this->assertNotNull($delivery->accepted_at);
+        $this->assertNotNull($delivery->departed_at);
+        $this->assertNull($delivery->delivered_at);
+
+        $this->actingAs($this->admin)
+            ->put(route('invoices.shipping.update', $invoice), [
+                'courier_id' => $this->courier->id,
+                'shipping_cost' => 50000,
+                'shipping_paid_now' => false,
+                'delivery_status' => CourierDelivery::PENDING,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $delivery->refresh();
+        $this->assertSame(CourierDelivery::PENDING, $delivery->status);
+        $this->assertNull($delivery->accepted_at);
+        $this->assertNull($delivery->departed_at);
+        $this->assertNull($delivery->delivered_at);
+    }
+
+    public function test_invalid_invoice_delivery_status_is_rejected(): void
+    {
+        $invoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($invoice, $this->admin->id, false);
+
+        $this->actingAs($this->admin)
+            ->from(route('invoices.show', $invoice))
+            ->put(route('invoices.shipping.update', $invoice), [
+                'courier_id' => $this->courier->id,
+                'shipping_cost' => 50000,
+                'shipping_paid_now' => false,
+                'delivery_status' => 'status-tidak-valid',
+            ])
+            ->assertRedirect(route('invoices.show', $invoice))
+            ->assertSessionHasErrors('delivery_status');
     }
 
     public function test_company_settings_can_be_saved_through_method_spoofed_post(): void
@@ -1414,7 +1470,7 @@ class InvoiceDomainTest extends TestCase
             ->assertSee($this->admin->name)
             ->assertSee($invoice->created_at->format('d/m/Y'))
             ->assertDontSee('QR verifikasi invoice')
-            ->assertSee("window.print()", false)
+            ->assertSee('window.print()', false)
             ->assertDontSee('Cetak Invoice')
             ->assertSee('@page { size: A5 portrait;', false);
     }
@@ -1493,6 +1549,137 @@ class InvoiceDomainTest extends TestCase
         $invoice = $this->makeInvoice();
         $invoice->update(['status' => InvoiceStatus::Overdue, 'due_date' => today()->subDay()]);
         $this->assertDatabaseHas('invoices', ['id' => $invoice->id, 'status' => 'overdue']);
+    }
+
+    public function test_database_cleanup_tab_is_super_admin_only_and_requires_password_confirmation(): void
+    {
+        $this->admin->update(['password' => 'rahasia-admin']);
+        $this->actingAs($this->admin)->get(route('company.edit'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canDeleteData', true)
+                ->has('cleanupCounts.customers')
+                ->has('cleanupCounts.invoices')
+                ->has('cleanupCounts.factures')
+                ->has('cleanupCounts.shipping')
+                ->has('cleanupCounts.cash_in')
+                ->has('cleanupCounts.cash_out'));
+
+        $cashIn = app(CashTransactionService::class)->create('in', [
+            'transaction_date' => '2026-07-19', 'category' => 'Manual', 'description' => 'Tetap ada',
+            'payment_method' => 'cash', 'amount' => 100000,
+        ], $this->admin->id);
+        $cashOut = app(CashTransactionService::class)->create('out', [
+            'transaction_date' => '2026-07-19', 'category' => 'Operasional', 'description' => 'Dihapus',
+            'payment_method' => 'cash', 'amount' => 25000,
+        ], $this->admin->id);
+
+        $this->delete(route('company.data.purge'), [
+            'scope' => 'cash_out', 'password' => 'salah', 'confirmation' => 'HAPUS DATA',
+        ])->assertSessionHasErrors('password');
+        $this->assertDatabaseHas('cash_transactions', ['id' => $cashOut->id]);
+
+        $this->delete(route('company.data.purge'), [
+            'scope' => 'cash_out', 'password' => 'rahasia-admin', 'confirmation' => 'HAPUS DATA',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('cash_transactions', ['id' => $cashOut->id]);
+        $this->assertDatabaseHas('cash_transactions', ['id' => $cashIn->id]);
+        $this->assertDatabaseHas('activity_logs', ['module' => 'database_cleanup', 'action' => 'purge']);
+
+        $staff = User::factory()->create(['password' => 'rahasia-staff', 'email_verified_at' => now(), 'is_active' => true]);
+        $staff->assignRole('Admin');
+        $this->actingAs($staff)->delete(route('company.data.purge'), [
+            'scope' => 'cash_out', 'password' => 'rahasia-staff', 'confirmation' => 'HAPUS DATA',
+        ])->assertForbidden();
+    }
+
+    public function test_deleting_cash_in_removes_payments_and_restores_invoice_balance(): void
+    {
+        $this->admin->update(['password' => 'rahasia-admin']);
+        $invoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($invoice, $this->admin->id, false, $this->courier->id, 0);
+        app(PaymentService::class)->record($invoice->fresh(), [
+            'payment_date' => '2026-07-19', 'amount' => 250000, 'payment_method' => 'cash',
+        ], $this->admin->id);
+
+        $this->actingAs($this->admin)->delete(route('company.data.purge'), [
+            'scope' => 'cash_in', 'password' => 'rahasia-admin', 'confirmation' => 'HAPUS DATA',
+        ])->assertSessionHasNoErrors();
+
+        $invoice->refresh();
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseMissing('cash_transactions', ['type' => 'in']);
+        $this->assertSame(InvoiceStatus::Unpaid, $invoice->status);
+        $this->assertSame('0.00', $invoice->paid_amount);
+        $this->assertSame($invoice->grand_total, $invoice->remaining_amount);
+    }
+
+    public function test_deleting_client_data_removes_clients_and_dependent_transactions(): void
+    {
+        $invoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($invoice, $this->admin->id, false, $this->courier->id, 15000);
+        app(PaymentService::class)->record($invoice->fresh(), [
+            'payment_date' => '2026-07-19', 'amount' => 100000, 'payment_method' => 'cash',
+        ], $this->admin->id);
+        $archivedCustomer = Customer::factory()->create();
+        $archivedCustomer->delete();
+
+        $result = app(DatabaseCleanupService::class)->purge('customers');
+
+        $this->assertSame(2, $result['before']['customers']);
+        $this->assertSame(0, $result['after']['customers']);
+        $this->assertDatabaseCount('customers', 0);
+        $this->assertDatabaseCount('invoices', 0);
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('courier_deliveries', 0);
+        $this->assertDatabaseMissing('cash_transactions', ['invoice_id' => $invoice->id]);
+        $this->assertDatabaseHas('products', ['id' => $this->product->id]);
+    }
+
+    public function test_all_database_cleanup_scopes_keep_relations_consistent(): void
+    {
+        $invoice = $this->makeInvoice();
+        app(InvoiceService::class)->issue($invoice, $this->admin->id, false, $this->courier->id, 15000);
+        app(PaymentService::class)->record($invoice->fresh(), [
+            'payment_date' => '2026-07-19', 'amount' => 100000, 'payment_method' => 'cash',
+        ], $this->admin->id);
+        $document = app(CombinedInvoiceService::class)->create(
+            $this->customer,
+            [$invoice->id],
+            null,
+            $this->courier->id,
+            10000,
+            $this->admin->id,
+        );
+
+        $cleanup = app(DatabaseCleanupService::class);
+        $cleanup->purge('factures');
+        $this->assertDatabaseMissing('combined_invoice_documents', ['id' => $document->id]);
+        $this->assertDatabaseHas('invoices', ['id' => $invoice->id]);
+        $this->assertDatabaseHas('payments', ['invoice_id' => $invoice->id, 'combined_invoice_document_id' => null]);
+
+        $cleanup->purge('shipping');
+        $this->assertDatabaseCount('courier_deliveries', 0);
+        $this->assertDatabaseCount('courier_shipping_deposits', 0);
+        $this->assertDatabaseHas('invoices', ['id' => $invoice->id, 'courier_id' => null, 'shipping_cost' => 0]);
+
+        $cleanup->purge('cash_in');
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseHas('invoices', ['id' => $invoice->id, 'paid_amount' => 0, 'status' => 'unpaid']);
+
+        app(CashTransactionService::class)->create('out', [
+            'transaction_date' => '2026-07-19', 'category' => 'Operasional', 'description' => 'Biaya',
+            'payment_method' => 'cash', 'amount' => 10000,
+        ], $this->admin->id);
+        $cleanup->purge('cash_out');
+        $this->assertDatabaseMissing('cash_transactions', ['type' => 'out']);
+
+        $cleanup->purge('invoices');
+        $this->assertDatabaseCount('invoices', 0);
+        $this->assertDatabaseCount('invoice_items', 0);
+        $this->assertDatabaseHas('customers', ['id' => $this->customer->id]);
+        $this->assertDatabaseHas('products', ['id' => $this->product->id]);
     }
 
     private function makeInvoice(): Invoice

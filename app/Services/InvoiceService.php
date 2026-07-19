@@ -13,6 +13,7 @@ use App\Models\Product;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class InvoiceService
@@ -149,9 +150,9 @@ class InvoiceService
         });
     }
 
-    public function updateShipping(Invoice $invoice, int $userId, int $courierId, mixed $shippingCost, bool $shippingPaidNow): Invoice
+    public function updateShipping(Invoice $invoice, int $userId, int $courierId, mixed $shippingCost, bool $shippingPaidNow, ?string $deliveryStatus = null): Invoice
     {
-        return DB::transaction(function () use ($invoice, $userId, $courierId, $shippingCost, $shippingPaidNow) {
+        return DB::transaction(function () use ($invoice, $userId, $courierId, $shippingCost, $shippingPaidNow, $deliveryStatus) {
             $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
             abort_if($invoice->status === InvoiceStatus::Draft, 422, 'Invoice draft menggunakan pengaturan pengiriman saat diterbitkan.');
             abort_if($invoice->status === InvoiceStatus::Cancelled, 422, 'Pengiriman invoice yang dibatalkan tidak dapat diubah.');
@@ -169,7 +170,10 @@ class InvoiceService
                 'shipping_cost' => $shippingCost,
             ]);
 
-            $delivery = $this->syncCourierDelivery($invoice);
+            $delivery = $this->syncCourierDelivery($invoice, $deliveryStatus);
+            if ($delivery && $deliveryStatus !== null) {
+                $this->applyDeliveryStatus($delivery, $deliveryStatus);
+            }
             $this->cash->syncInvoiceShipping($invoice, $userId, $shippingPaidNow);
             $this->audit->record('update_shipping', 'invoice', $invoice, $old, $invoice->fresh(['shippingDeposit', 'delivery'])->toArray());
             Cache::forget('dashboard.metrics');
@@ -275,7 +279,7 @@ class InvoiceService
         return bccomp($paidAmount, '0', 2) > 0 ? InvoiceStatus::PartiallyPaid : InvoiceStatus::Unpaid;
     }
 
-    private function syncCourierDelivery(Invoice $invoice): ?CourierDelivery
+    private function syncCourierDelivery(Invoice $invoice, ?string $requestedStatus = null): ?CourierDelivery
     {
         if (! $invoice->courier_id) {
             $invoice->delivery()->where('status', CourierDelivery::PENDING)->delete();
@@ -284,13 +288,93 @@ class InvoiceService
         }
 
         $delivery = $invoice->delivery()->first();
-        if ($delivery && $delivery->courier_id !== $invoice->courier_id && $delivery->status !== CourierDelivery::PENDING) {
+        if ($delivery && $delivery->courier_id !== $invoice->courier_id && $delivery->status !== CourierDelivery::PENDING && $requestedStatus !== CourierDelivery::PENDING) {
             throw ValidationException::withMessages(['courier_id' => 'Kurir tidak dapat diganti setelah tugas diambil.']);
         }
 
         return CourierDelivery::updateOrCreate(
             ['invoice_id' => $invoice->id],
-            ['courier_id' => $invoice->courier_id, 'status' => $delivery?->status ?? CourierDelivery::PENDING],
+            [
+                'courier_id' => $invoice->courier_id,
+                'status' => $requestedStatus ?? $delivery?->status ?? CourierDelivery::PENDING,
+            ],
         );
+    }
+
+    private function applyDeliveryStatus(CourierDelivery $delivery, string $status): void
+    {
+        $now = now();
+        $updates = ['status' => $status];
+        $filesToDelete = [];
+
+        if ($status === CourierDelivery::PENDING) {
+            $filesToDelete = array_filter([$delivery->departure_photo_path, $delivery->proof_photo_path]);
+            $updates = array_merge($updates, [
+                'accepted_at' => null,
+                'departed_at' => null,
+                'delivered_at' => null,
+                'accepted_latitude' => null,
+                'accepted_longitude' => null,
+                'departed_latitude' => null,
+                'departed_longitude' => null,
+                'departed_accuracy' => null,
+                'departure_address' => null,
+                'departure_photo_path' => null,
+                'departure_photo_taken_at' => null,
+                'delivered_latitude' => null,
+                'delivered_longitude' => null,
+                'delivered_accuracy' => null,
+                'delivery_address' => null,
+                'proof_photo_path' => null,
+                'proof_taken_at' => null,
+                'delivery_notes' => null,
+            ]);
+        } elseif ($status === CourierDelivery::ACCEPTED) {
+            $filesToDelete = array_filter([$delivery->departure_photo_path, $delivery->proof_photo_path]);
+            $updates = array_merge($updates, [
+                'accepted_at' => $delivery->accepted_at ?? $now,
+                'departed_at' => null,
+                'delivered_at' => null,
+                'departed_latitude' => null,
+                'departed_longitude' => null,
+                'departed_accuracy' => null,
+                'departure_address' => null,
+                'departure_photo_path' => null,
+                'departure_photo_taken_at' => null,
+                'delivered_latitude' => null,
+                'delivered_longitude' => null,
+                'delivered_accuracy' => null,
+                'delivery_address' => null,
+                'proof_photo_path' => null,
+                'proof_taken_at' => null,
+                'delivery_notes' => null,
+            ]);
+        } elseif ($status === CourierDelivery::IN_TRANSIT) {
+            $filesToDelete = array_filter([$delivery->proof_photo_path]);
+            $updates = array_merge($updates, [
+                'accepted_at' => $delivery->accepted_at ?? $now,
+                'departed_at' => $delivery->departed_at ?? $now,
+                'delivered_at' => null,
+                'delivered_latitude' => null,
+                'delivered_longitude' => null,
+                'delivered_accuracy' => null,
+                'delivery_address' => null,
+                'proof_photo_path' => null,
+                'proof_taken_at' => null,
+                'delivery_notes' => null,
+            ]);
+        } elseif ($status === CourierDelivery::DELIVERED) {
+            $updates = array_merge($updates, [
+                'accepted_at' => $delivery->accepted_at ?? $now,
+                'departed_at' => $delivery->departed_at ?? $now,
+                'delivered_at' => $delivery->delivered_at ?? $now,
+            ]);
+        }
+
+        $delivery->update($updates);
+
+        if ($filesToDelete !== []) {
+            DB::afterCommit(fn () => Storage::disk('public')->delete($filesToDelete));
+        }
     }
 }

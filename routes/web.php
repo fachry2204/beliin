@@ -93,6 +93,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('reports/export/{format}', [ReportController::class, 'export'])->whereIn('format', ['csv', 'xlsx', 'pdf'])->name('reports.export');
     Route::get('settings/company', [CompanySettingController::class, 'edit'])->name('company.edit');
     Route::put('settings/company', [CompanySettingController::class, 'update'])->name('company.update');
+    Route::delete('settings/company/data', [CompanySettingController::class, 'purgeData'])->name('company.data.purge');
     Route::put('settings/company/roles/{role}', [CompanySettingController::class, 'updateRolePermissions'])->name('company.roles.update');
     Route::resource('users', UserController::class)->only(['index', 'store', 'update']);
     Route::get('activity-logs', ActivityLogController::class)->name('activity.index');

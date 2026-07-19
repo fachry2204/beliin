@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CompanySetting;
 use App\Services\AuditLogService;
+use App\Services\DatabaseCleanupService;
 use App\Support\RoleAccessCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,7 +14,7 @@ use Spatie\Permission\Models\Role;
 
 class CompanySettingController extends Controller
 {
-    public function __construct(private AuditLogService $audit) {}
+    public function __construct(private AuditLogService $audit, private DatabaseCleanupService $cleanup) {}
 
     public function edit()
     {
@@ -36,6 +37,8 @@ class CompanySettingController extends Controller
                         'permissions' => $role->permissions->whereIn('name', $catalogPermissions)->values(),
                     ]),
             ],
+            'canDeleteData' => auth()->user()->hasRole('Super Admin'),
+            'cleanupCounts' => auth()->user()->hasRole('Super Admin') ? $this->cleanup->counts() : [],
         ]);
     }
 
@@ -97,5 +100,25 @@ class CompanySettingController extends Controller
         $this->audit->record('update', 'role_access', $role, ['permissions' => $old], ['permissions' => $permissions]);
 
         return back()->with('success', "Akses role {$role->name} diperbarui.");
+    }
+
+    public function purgeData(Request $request)
+    {
+        $this->authorize('settings.manage');
+        abort_unless($request->user()->hasRole('Super Admin'), 403);
+
+        $data = $request->validate([
+            'scope' => ['required', Rule::in(DatabaseCleanupService::SCOPES)],
+            'password' => ['required', 'current_password'],
+            'confirmation' => ['required', Rule::in(['HAPUS DATA'])],
+        ], [
+            'password.current_password' => 'Password akun tidak sesuai.',
+            'confirmation.in' => 'Ketik HAPUS DATA untuk melanjutkan.',
+        ]);
+
+        $result = $this->cleanup->purge($data['scope']);
+        $deleted = $result['before'][$data['scope']] - $result['after'][$data['scope']];
+
+        return back()->with('success', "Pembersihan data selesai. {$deleted} data utama telah dihapus.");
     }
 }

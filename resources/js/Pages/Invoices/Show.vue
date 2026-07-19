@@ -173,6 +173,7 @@ const shippingForm = useForm({
     courier_id: String(props.invoice.courier_id ?? ""),
     shipping_cost: String(props.invoice.shipping_cost ?? "0"),
     shipping_paid_now: Boolean(props.invoice.shipping_deposit?.paid_at),
+    delivery_status: props.invoice.delivery?.status ?? "pending",
 });
 const openShipping = () => {
     editMenuOpen.value = false;
@@ -182,6 +183,7 @@ const openShipping = () => {
         status() === "draft"
             ? true
             : Boolean(props.invoice.shipping_deposit?.paid_at);
+    shippingForm.delivery_status = props.invoice.delivery?.status ?? "pending";
     shippingForm.clearErrors();
     shippingOpen.value = true;
 };
@@ -261,7 +263,7 @@ const remove = () =>
                             class="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700"
                             @click="openShipping"
                         >
-                            Edit Kurir &amp; Ongkir
+                            Edit Kurir, Ongkir &amp; Status
                         </button>
                     </div>
                 </div>
@@ -537,7 +539,7 @@ const remove = () =>
         </div>
         <AppModal
             :show="shippingOpen"
-            :title="status() === 'draft' ? 'Terbitkan Invoice' : 'Edit Kurir & Ongkir'"
+            :title="status() === 'draft' ? 'Terbitkan Invoice' : 'Edit Pengiriman Invoice'"
             @close="shippingOpen = false"
         >
             <form class="space-y-5" @submit.prevent="submitShipping">
@@ -559,6 +561,19 @@ const remove = () =>
                         <CurrencyInput v-model="shippingForm.shipping_cost" placeholder="0" />
                     </label>
                 </div>
+                <label v-if="status() !== 'draft'" class="block">
+                    <span class="label">Status Pengiriman *</span>
+                    <AppSelect v-model="shippingForm.delivery_status" required>
+                        <option value="pending">Tugas Belum Diambil</option>
+                        <option value="accepted">Tugas Diambil</option>
+                        <option value="in_transit">Dalam Pengantaran</option>
+                        <option value="delivered">Selesai</option>
+                        <option value="cancelled">Dibatalkan</option>
+                    </AppSelect>
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Mengembalikan status ke tahap sebelumnya akan mengatur ulang waktu dan bukti foto pada tahap setelahnya.
+                    </span>
+                </label>
                 <fieldset v-if="Number(shippingForm.shipping_cost) > 0">
                     <legend class="mb-3 font-semibold">
                         Apakah ongkir dibayarkan langsung ke kurir?
