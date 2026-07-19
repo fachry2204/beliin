@@ -25,8 +25,7 @@ class CustomerController extends Controller
     public function store(CustomerRequest $r)
     {
         $data = $r->validated();
-        $data['customer_code'] = $this->customerCodes->next();
-        $m = Customer::create($data);
+        $m = $this->customerCodes->create($data);
         $this->audit->record('create', 'customer', $m, null, $m->toArray());
 
         return back()->with('success', 'Pelanggan berhasil disimpan.');

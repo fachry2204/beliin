@@ -8,17 +8,23 @@ use App\Models\CourierDelivery;
 use App\Models\CourierShippingDeposit;
 use App\Services\AuditLogService;
 use App\Services\CashTransactionService;
+use App\Services\CourierProfileService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class CourierController extends Controller
 {
-    public function __construct(private AuditLogService $audit, private CashTransactionService $cash) {}
+    public function __construct(
+        private AuditLogService $audit,
+        private CashTransactionService $cash,
+        private CourierProfileService $courierProfiles,
+    ) {}
 
     public function index(Request $request)
     {
         $this->authorize('couriers.view');
+        $this->courierProfiles->reconcileRoleUsers();
 
         $rows = Courier::query()
             ->when($request->search, fn ($query, $search) => $query->where(fn ($query) => $query

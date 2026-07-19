@@ -3,9 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UserRequest;
-use App\Models\Courier;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\CourierProfileService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -17,7 +17,7 @@ class UserController extends Controller
 {
     private const DEFAULT_PASSWORD = '12345678';
 
-    public function __construct(private AuditLogService $audit) {}
+    public function __construct(private AuditLogService $audit, private CourierProfileService $courierProfiles) {}
 
     public function index(Request $request)
     {
@@ -39,7 +39,7 @@ class UserController extends Controller
         $user = DB::transaction(function () use ($data, $role) {
             $user = User::create($data);
             $user->assignRole($role);
-            $this->syncCourierProfile($user, $role);
+            $this->courierProfiles->sync($user, $role);
 
             return $user;
         });
@@ -61,7 +61,7 @@ class UserController extends Controller
         DB::transaction(function () use ($user, $data, $role) {
             $user->update($data);
             $user->syncRoles([$role]);
-            $this->syncCourierProfile($user, $role);
+            $this->courierProfiles->sync($user, $role);
         });
         $this->audit->record('update', 'user', $user, $old, $user->fresh('roles')->toArray());
 
@@ -117,47 +117,6 @@ class UserController extends Controller
         $this->audit->record('delete', 'user', null, $old, null);
 
         return back()->with('success', 'Pengguna dihapus.');
-    }
-
-    private function syncCourierProfile(User $user, string $role): void
-    {
-        $courier = Courier::withTrashed()->where('user_id', $user->id)->first();
-
-        if ($role !== 'Kurir') {
-            $courier?->update(['is_active' => false]);
-
-            return;
-        }
-
-        if (! $courier) {
-            $courier = Courier::create([
-                'user_id' => $user->id,
-                'courier_code' => $this->courierCodeFor($user),
-                'name' => $user->name,
-                'is_active' => $user->is_active,
-            ]);
-        } else {
-            if ($courier->trashed()) {
-                $courier->restore();
-            }
-            $courier->update([
-                'name' => $user->name,
-                'is_active' => $user->is_active,
-            ]);
-        }
-    }
-
-    private function courierCodeFor(User $user): string
-    {
-        $base = 'KUR-'.str_pad((string) $user->id, 5, '0', STR_PAD_LEFT);
-        $code = $base;
-        $suffix = 1;
-
-        while (Courier::withTrashed()->where('courier_code', $code)->exists()) {
-            $code = $base.'-'.$suffix++;
-        }
-
-        return $code;
     }
 
     private function ensureSuperAdminRemainsActive(User $user, bool $active): void

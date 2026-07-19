@@ -244,6 +244,34 @@ class CourierPortalTest extends TestCase
         ]);
     }
 
+    public function test_courier_list_backfills_legacy_users_with_courier_role(): void
+    {
+        $legacyUser = User::factory()->create([
+            'name' => 'Luri',
+            'username' => 'luri',
+            'is_active' => true,
+        ]);
+        $legacyUser->assignRole('Kurir');
+
+        $this->assertDatabaseMissing('couriers', ['user_id' => $legacyUser->id]);
+
+        $this->actingAs($this->admin)->get(route('couriers.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Masters/Index')
+                ->has('rows.data', 2)
+                ->where('rows.data.1.user_id', $legacyUser->id)
+                ->where('rows.data.1.name', 'Luri')
+                ->where('rows.data.1.is_active', true));
+
+        $this->assertDatabaseHas('couriers', [
+            'user_id' => $legacyUser->id,
+            'courier_code' => 'KUR-'.str_pad((string) $legacyUser->id, 5, '0', STR_PAD_LEFT),
+            'name' => 'Luri',
+            'is_active' => true,
+        ]);
+    }
+
     public function test_all_non_courier_roles_are_saved_with_the_default_password(): void
     {
         foreach (['Admin', 'Finance', 'Staff', 'Pimpinan'] as $index => $role) {

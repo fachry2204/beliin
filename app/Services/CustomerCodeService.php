@@ -3,34 +3,45 @@
 namespace App\Services;
 
 use App\Models\Customer;
-use App\Models\CustomerSequence;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class CustomerCodeService
 {
-    public function next(): string
+    public function create(array $attributes): Customer
     {
-        return DB::transaction(function (): string {
-            CustomerSequence::query()->insertOrIgnore([
-                'id' => 1,
-                'last_number' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+        return DB::transaction(function () use ($attributes): Customer {
+            $usesMysqlLock = DB::getDriverName() === 'mysql';
 
-            $sequence = CustomerSequence::query()->lockForUpdate()->findOrFail(1);
-            $largestExistingNumber = Customer::withTrashed()
-                ->pluck('customer_code')
-                ->reduce(function (int $largest, string $code): int {
-                    return preg_match('/^CUS-(\d+)$/', $code, $matches)
-                        ? max($largest, (int) $matches[1])
-                        : $largest;
-                }, 0);
+            if ($usesMysqlLock) {
+                $lock = DB::selectOne("SELECT GET_LOCK('customer_code_generation', 10) AS acquired");
+                if ((int) ($lock->acquired ?? 0) !== 1) {
+                    throw new RuntimeException('Gagal memperoleh kunci pembuatan kode pelanggan.');
+                }
+            }
 
-            $nextNumber = max($sequence->last_number, $largestExistingNumber) + 1;
-            $sequence->update(['last_number' => $nextNumber]);
+            try {
+                $attributes['customer_code'] = $this->nextCode();
 
-            return sprintf('CUS-%05d', $nextNumber);
+                return Customer::create($attributes);
+            } finally {
+                if ($usesMysqlLock) {
+                    DB::selectOne("SELECT RELEASE_LOCK('customer_code_generation') AS released");
+                }
+            }
         });
+    }
+
+    private function nextCode(): string
+    {
+        $largestExistingNumber = Customer::withTrashed()
+            ->pluck('customer_code')
+            ->reduce(function (int $largest, string $code): int {
+                return preg_match('/^CUS-(\d+)$/', $code, $matches)
+                    ? max($largest, (int) $matches[1])
+                    : $largest;
+            }, 0);
+
+        return sprintf('CUS-%05d', $largestExistingNumber + 1);
     }
 }
