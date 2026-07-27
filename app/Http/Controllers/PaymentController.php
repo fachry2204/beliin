@@ -27,9 +27,18 @@ class PaymentController extends Controller
     public function receivables(Request $request)
     {
         $this->authorize('payments.view');
-        $rows = Invoice::with('customer:id,name,company_name')->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::PartiallyPaid, InvoiceStatus::Overdue])->latest('due_date')->paginate(15);
+        $query = Invoice::query()
+            ->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::PartiallyPaid, InvoiceStatus::Overdue]);
+        $totalReceivables = (clone $query)->sum('remaining_amount');
+        $rows = $query
+            ->with('customer:id,name,company_name')
+            ->latest('due_date')
+            ->paginate(15);
 
-        return Inertia::render('Payments/Receivables', ['rows' => $rows]);
+        return Inertia::render('Payments/Receivables', [
+            'rows' => $rows,
+            'totalReceivables' => $totalReceivables,
+        ]);
     }
 
     public function store(PaymentRequest $request, Invoice $invoice)

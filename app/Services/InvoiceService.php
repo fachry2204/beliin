@@ -112,7 +112,6 @@ class InvoiceService
             if ($invoice->status !== InvoiceStatus::Draft) {
                 $this->syncCourierDelivery($invoice);
                 $this->cash->syncInvoiceShipping($invoice, $userId);
-                $this->cash->syncInvoiceCost($invoice, $userId);
             }
             $this->audit->record('update', 'invoice', $invoice, $old, $invoice->fresh('items')->toArray());
             Cache::forget('dashboard.metrics');
@@ -142,7 +141,6 @@ class InvoiceService
             ]);
             $delivery = $this->syncCourierDelivery($invoice);
             $this->cash->syncInvoiceShipping($invoice, $userId, $shippingPaidNow);
-            $this->cash->syncInvoiceCost($invoice, $userId);
             $this->audit->record('issue', 'invoice', $invoice);
             Cache::forget('dashboard.metrics');
 
@@ -199,7 +197,6 @@ class InvoiceService
             $old = $invoice->load('payments')->toArray();
             $this->deletePaymentHistory($invoice);
             $this->cash->deleteInvoiceShipping($invoice);
-            $this->cash->deleteInvoiceCost($invoice);
             $invoice->delivery()->update(['status' => CourierDelivery::CANCELLED]);
             $invoice->update([
                 'status' => InvoiceStatus::Cancelled,
@@ -223,7 +220,6 @@ class InvoiceService
             $old = $invoice->load('payments')->toArray();
             $this->deletePaymentHistory($invoice);
             $this->cash->deleteInvoiceShipping($invoice);
-            $this->cash->deleteInvoiceCost($invoice);
             $this->audit->record('delete', 'invoice', $invoice, $old);
             $invoice->delete();
             $this->combinedInvoices->closeIfSettled($invoice->customer);

@@ -636,6 +636,22 @@ class InvoiceDomainTest extends TestCase
         );
     }
 
+    public function test_issuing_invoice_does_not_record_price_cost_as_cash_out(): void
+    {
+        $invoice = $this->makeInvoice();
+        $this->assertSame('750000.00', $invoice->total_cost);
+
+        app(InvoiceService::class)->issue($invoice->fresh(), $this->admin->id, false);
+
+        $this->assertDatabaseMissing('cash_transactions', [
+            'invoice_cost_id' => $invoice->id,
+        ]);
+        $this->assertDatabaseMissing('cash_transactions', [
+            'category' => 'Harga Modal',
+            'reference_number' => $invoice->invoice_number,
+        ]);
+    }
+
     public function test_shipping_can_be_edited_after_invoice_is_issued_and_cash_out_is_synchronized(): void
     {
         $invoice = $this->makeInvoice();
@@ -1051,6 +1067,28 @@ class InvoiceDomainTest extends TestCase
         $this->actingAs($this->admin)->delete(route('cash-in.destroy', $partialCash))->assertStatus(422);
     }
 
+    public function test_receivables_page_exposes_total_from_all_unpaid_invoices(): void
+    {
+        $first = $this->makeInvoice();
+        $second = $this->makeInvoice();
+        $first->update([
+            'status' => InvoiceStatus::Unpaid,
+            'remaining_amount' => 400000,
+        ]);
+        $second->update([
+            'status' => InvoiceStatus::PartiallyPaid,
+            'remaining_amount' => 250000,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('receivables.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Payments/Receivables')
+                ->has('rows.data', 2)
+                ->where('totalReceivables', fn ($value) => (float) $value === 650000.0));
+    }
+
     public function test_issued_and_partially_paid_invoices_can_be_edited_safely(): void
     {
         $invoice = $this->makeInvoice();
@@ -1312,17 +1350,18 @@ class InvoiceDomainTest extends TestCase
                 ->where('defaultDueDate', now()->addWeek()->toDateString())
         );
 
+        $factureDueDate = today()->addWeek()->toDateString();
         $this->post(route('combined-invoices.store'), [
             'customer_id' => $this->customer->id,
             'invoice_ids' => [$unpaid->id, $partial->id],
             'use_due_date' => true,
-            'due_date' => '2026-07-24',
+            'due_date' => $factureDueDate,
             'courier_id' => $this->courier->id,
             'shipping_cost' => 50000,
         ])->assertRedirect();
         $document = CombinedInvoiceDocument::firstOrFail();
         $this->assertMatchesRegularExpression('#^FKT/2026/07/\d{5}$#', $document->facture_number);
-        $this->assertSame('2026-07-24', $document->due_date->toDateString());
+        $this->assertSame($factureDueDate, $document->due_date->toDateString());
         $this->assertSame($this->courier->id, $document->courier_id);
         $this->assertSame('50000.00', $document->shipping_cost);
         $this->assertDatabaseHas('cash_transactions', [
@@ -1343,7 +1382,7 @@ class InvoiceDomainTest extends TestCase
                 ->where('canManagePayments', true)
                 ->where('canViewProfit', true)
                 ->where('totals.remaining_total', '1600000')
-                ->where('document.due_date', '2026-07-24')
+                ->where('document.due_date', $factureDueDate)
                 ->where('document.courier_name', $this->courier->name)
                 ->where('document.shipping_cost', '50000.00')
                 ->where('canEditDueDate', true)

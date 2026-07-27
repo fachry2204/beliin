@@ -16,7 +16,6 @@ interface CashRow {
     id: number;
     payment_id?: number;
     invoice_id?: number;
-    invoice_cost_id?: number;
     combined_invoice_document_id?: number;
     facture_commission_exists?: boolean;
     transaction_number: string;
@@ -94,9 +93,7 @@ const method = (value: string) =>
 const category = (row: CashRow) =>
     row.invoice_id || row.combined_invoice_document_id
         ? "Ongkir Driver"
-        : row.invoice_cost_id
-          ? "Harga Modal"
-          : row.category;
+        : row.category;
 
 const openCreate = () => {
     editingId.value = null;
@@ -197,17 +194,19 @@ const remove = (row: CashRow) => {
                 />
             </div>
             <div class="table-wrap">
-                <table class="data-table">
+                <table
+                    class="data-table w-[1280px] min-w-[1280px] table-fixed"
+                >
                     <thead>
                         <tr>
-                            <th>Nomor</th>
-                            <th>Tanggal</th>
-                            <th>Kategori / Sumber</th>
-                            <th>Keterangan / Referensi</th>
-                            <th>Metode</th>
-                            <th class="text-right">Nominal</th>
-                            <th>Dibuat Oleh</th>
-                            <th class="text-right">Aksi</th>
+                            <th class="w-[170px]">Nomor</th>
+                            <th class="w-[120px]">Tanggal</th>
+                            <th class="w-[190px]">Kategori / Sumber</th>
+                            <th class="w-[380px]">Keterangan / Referensi</th>
+                            <th class="w-[110px]">Metode</th>
+                            <th class="w-[150px] text-right">Nominal</th>
+                            <th class="w-[140px]">Dibuat Oleh</th>
+                            <th class="w-[100px] text-right">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -223,7 +222,6 @@ const remove = (row: CashRow) => {
                                     :class="
                                         row.payment_id ||
                                         row.invoice_id ||
-                                        row.invoice_cost_id ||
                                         row.combined_invoice_document_id ||
                                         row.facture_commission_exists
                                             ? 'bg-emerald-100 text-emerald-700'
@@ -234,9 +232,7 @@ const remove = (row: CashRow) => {
                                             ? "Pembayaran Invoice"
                                             : row.invoice_id
                                               ? "Ongkir Driver"
-                                              : row.invoice_cost_id
-                                                ? "Modal Invoice"
-                                                : row.combined_invoice_document_id
+                                              : row.combined_invoice_document_id
                                                   ? "Ongkir Driver Faktur"
                                                   : row.facture_commission_exists
                                                     ? "Komisi Faktur"
@@ -244,9 +240,15 @@ const remove = (row: CashRow) => {
                                     }}</span
                                 >
                             </td>
-                            <td class="max-w-xs">
-                                <div>{{ row.description }}</div>
-                                <div class="mt-1 text-xs text-slate-400">
+                            <td
+                                class="!whitespace-normal break-words align-top leading-5"
+                            >
+                                <div class="break-words">
+                                    {{ row.description }}
+                                </div>
+                                <div
+                                    class="mt-1 break-all text-xs text-slate-400"
+                                >
                                     Ref: {{ row.reference_number || "-" }}
                                 </div>
                             </td>
@@ -268,7 +270,6 @@ const remove = (row: CashRow) => {
                                     v-if="
                                         !row.payment_id &&
                                         !row.invoice_id &&
-                                        !row.invoice_cost_id &&
                                         !row.combined_invoice_document_id &&
                                         !row.facture_commission_exists
                                     "
