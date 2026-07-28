@@ -27,16 +27,22 @@ class ReportController extends Controller
     public function invoices(Request $request)
     {
         $this->authorize('reports.view');
+        $canViewProfit = $request->user()->can('profit.view');
         $query = $this->invoiceQuery($request);
         $summary = (clone $query)->selectRaw(
             'COUNT(*) as invoice_count, COALESCE(SUM(grand_total),0) as grand_total, COALESCE(SUM(paid_amount),0) as paid_total, COALESCE(SUM(remaining_amount),0) as remaining_total'
         )->first();
         $rows = $query->with('customer:id,name,company_name')->latest('invoice_date')->latest('id')->paginate(15)->withQueryString();
 
+        if (! $canViewProfit) {
+            $rows->getCollection()->each->makeHidden(['total_cost', 'gross_profit']);
+        }
+
         return Inertia::render('Reports/Invoices', [
             'summary' => $summary,
             'rows' => $rows,
             'filters' => $this->filters($request, ['status']),
+            'canViewProfit' => $canViewProfit,
         ]);
     }
 
@@ -161,13 +167,17 @@ class ReportController extends Controller
     public function export(Request $request, string $format)
     {
         $this->authorize('reports.export');
+        $canViewProfit = $request->user()->can('profit.view');
         $name = 'laporan-invoice-'.now()->format('Ymd-His');
         if ($format === 'xlsx') {
-            return Excel::download(new SalesReportExport($request->date_from, $request->date_to), $name.'.xlsx');
+            return Excel::download(new SalesReportExport($request->date_from, $request->date_to, $canViewProfit), $name.'.xlsx');
         }
         $rows = $this->invoiceQuery($request)->with('customer')->latest('invoice_date')->get();
         if ($format === 'pdf') {
-            return Pdf::loadView('reports.sales', ['rows' => $rows])->setPaper('a4', 'landscape')->download($name.'.pdf');
+            return Pdf::loadView('reports.sales', [
+                'rows' => $rows,
+                'canViewProfit' => $canViewProfit,
+            ])->setPaper('a4', 'landscape')->download($name.'.pdf');
         }
 
         return response()->streamDownload(function () use ($rows) {

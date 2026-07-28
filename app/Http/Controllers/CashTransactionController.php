@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CashTransactionRequest;
 use App\Models\CashTransaction;
+use App\Models\CompanySetting;
 use App\Services\CashTransactionService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -76,6 +77,8 @@ class CashTransactionController extends Controller
             'rows' => $rows,
             'typeTotal' => $type === 'in' ? $incoming : $outgoing,
             'cashBalance' => $incoming - $outgoing,
+            'cashInCategories' => CompanySetting::availableCashInCategories(),
+            'cashOutCategories' => CompanySetting::availableCashOutCategories(),
         ]);
     }
 

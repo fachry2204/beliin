@@ -94,11 +94,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('reports/export/{format}', [ReportController::class, 'export'])->whereIn('format', ['csv', 'xlsx', 'pdf'])->name('reports.export');
     Route::get('settings/company', [CompanySettingController::class, 'edit'])->name('company.edit');
     Route::put('settings/company', [CompanySettingController::class, 'update'])->name('company.update');
+    Route::put('settings/company/cash-out-categories', [CompanySettingController::class, 'updateCashOutCategories'])->name('company.cash-out-categories.update');
+    Route::put('settings/company/cash-in-categories', [CompanySettingController::class, 'updateCashInCategories'])->name('company.cash-in-categories.update');
     Route::delete('settings/company/data', [CompanySettingController::class, 'purgeData'])->name('company.data.purge');
     Route::post('settings/company/backups', [CompanySettingController::class, 'createBackup'])->name('company.backups.store');
     Route::put('settings/company/backups/schedule', [CompanySettingController::class, 'updateBackupSchedule'])->name('company.backups.schedule');
     Route::get('settings/company/backups/{filename}', [CompanySettingController::class, 'downloadBackup'])->name('company.backups.download');
     Route::delete('settings/company/backups/{filename}', [CompanySettingController::class, 'deleteBackup'])->name('company.backups.destroy');
+    Route::post('settings/company/database/migrate', [CompanySettingController::class, 'migrateDatabase'])->name('company.database.migrate');
     Route::put('settings/company/roles/{role}', [CompanySettingController::class, 'updateRolePermissions'])->name('company.roles.update');
     Route::patch('users/{user}/status', [UserController::class, 'updateStatus'])->name('users.status');
     Route::resource('users', UserController::class)->only(['index', 'store', 'update', 'destroy']);

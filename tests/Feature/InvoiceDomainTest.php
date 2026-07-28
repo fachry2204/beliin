@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\InvoiceStatus;
+use App\Exports\SalesReportExport;
 use App\Models\CashTransaction;
 use App\Models\CombinedInvoiceDocument;
 use App\Models\CompanySetting;
@@ -151,6 +152,90 @@ class InvoiceDomainTest extends TestCase
         $this->assertDatabaseHas('activity_logs', ['module' => 'cash_transaction', 'action' => 'delete']);
     }
 
+    public function test_cash_out_categories_are_managed_in_settings_and_enforced_for_manual_expenses(): void
+    {
+        $this->actingAs($this->admin)
+            ->put(route('company.cash-out-categories.update'), [
+                'cash_out_categories' => ['Operasional', 'Biaya Kebersihan', 'operasional'],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['Operasional', 'Biaya Kebersihan'],
+            CompanySetting::firstOrFail()->cash_out_categories,
+        );
+
+        $this->get(route('cash-out.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Cash/Index')
+                ->where('cashOutCategories', ['Operasional', 'Biaya Kebersihan']));
+
+        $payload = [
+            'transaction_date' => '2026-07-28',
+            'category' => 'Biaya Kebersihan',
+            'description' => 'Pembelian perlengkapan kebersihan',
+            'payment_method' => 'cash',
+            'amount' => 125000,
+        ];
+
+        $this->post(route('cash-out.store'), $payload)
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('cash_transactions', [
+            'type' => 'out',
+            'category' => 'Biaya Kebersihan',
+            'amount' => 125000,
+        ]);
+
+        $payload['category'] = 'Kategori Bebas';
+        $this->post(route('cash-out.store'), $payload)
+            ->assertSessionHasErrors('category');
+    }
+
+    public function test_cash_in_categories_are_managed_in_settings_and_enforced_for_manual_income(): void
+    {
+        $this->actingAs($this->admin)
+            ->put(route('company.cash-in-categories.update'), [
+                'cash_in_categories' => ['Penjualan Tunai', 'Pendapatan Sewa', 'penjualan tunai'],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['Penjualan Tunai', 'Pendapatan Sewa'],
+            CompanySetting::firstOrFail()->cash_in_categories,
+        );
+
+        $this->get(route('cash-in.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Cash/Index')
+                ->where('cashInCategories', ['Penjualan Tunai', 'Pendapatan Sewa']));
+
+        $payload = [
+            'transaction_date' => '2026-07-28',
+            'category' => 'Pendapatan Sewa',
+            'description' => 'Pendapatan sewa kendaraan',
+            'payment_method' => 'transfer',
+            'amount' => 750000,
+        ];
+
+        $this->post(route('cash-in.store'), $payload)
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('cash_transactions', [
+            'type' => 'in',
+            'category' => 'Pendapatan Sewa',
+            'amount' => 750000,
+        ]);
+
+        $payload['category'] = 'Kategori Bebas';
+        $this->post(route('cash-in.store'), $payload)
+            ->assertSessionHasErrors('category');
+    }
+
     public function test_staff_cannot_manage_products_or_view_profit_report(): void
     {
         $staff = User::factory()->create(['email_verified_at' => now()]);
@@ -213,6 +298,9 @@ class InvoiceDomainTest extends TestCase
                 ->component('Reports/Invoices')
                 ->has('rows.data', 1)
                 ->where('rows.data.0.id', $invoice->id)
+                ->where('rows.data.0.total_cost', fn ($value) => (float) $value === (float) $invoice->total_cost)
+                ->where('rows.data.0.gross_profit', fn ($value) => (float) $value === (float) $invoice->gross_profit)
+                ->where('canViewProfit', true)
                 ->where('filters.search', $invoice->invoice_number));
 
         $this->get(route('reports.combined-invoices', [
@@ -237,6 +325,11 @@ class InvoiceDomainTest extends TestCase
             ->has('rows.data', 1)
             ->where('rows.data.0.type', 'in')
             ->where('summary.incoming_total', 500000));
+
+        $this->assertContains('Modal', (new SalesReportExport(null, null, true))->headings());
+        $this->assertContains('Margin', (new SalesReportExport(null, null, true))->headings());
+        $this->assertNotContains('Modal', (new SalesReportExport())->headings());
+        $this->assertNotContains('Margin', (new SalesReportExport())->headings());
 
         $this->get(route('reports.margins', [
             'date_from' => $factureDate,
@@ -879,6 +972,10 @@ class InvoiceDomainTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Settings/Company')
                 ->has('roleAccess.groups')
+                ->where('databaseHealth.status', 'healthy')
+                ->where('databaseHealth.pending_migrations', [])
+                ->where('databaseHealth.missing_tables', [])
+                ->where('databaseHealth.missing_columns', [])
                 ->where('roleAccess.roles', fn ($roles) => collect($roles)->contains(fn ($role) => $role['name'] === 'Finance')));
 
         $finance = Role::findByName('Finance');
@@ -911,6 +1008,31 @@ class InvoiceDomainTest extends TestCase
             ->assertStatus(422);
 
         $this->assertTrue($superAdmin->fresh()->hasPermissionTo('settings.manage'));
+    }
+
+    public function test_super_admin_can_safely_run_database_update_from_settings(): void
+    {
+        $this->admin->update(['password' => 'rahasia-admin']);
+
+        $this->actingAs($this->admin)
+            ->post(route('company.database.migrate'), [
+                'password' => 'salah',
+                'confirmation' => 'PERBARUI DATABASE',
+            ])
+            ->assertSessionHasErrors('password');
+
+        $this->post(route('company.database.migrate'), [
+            'password' => 'rahasia-admin',
+            'confirmation' => 'PERBARUI DATABASE',
+        ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Pembaruan database selesai. Struktur database sudah sesuai.');
+
+        $this->assertDatabaseHas('activity_logs', [
+            'action' => 'update',
+            'module' => 'database_schema',
+        ]);
     }
 
     public function test_disabled_tax_and_discount_are_forced_to_zero_on_invoice(): void

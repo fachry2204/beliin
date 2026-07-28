@@ -32,6 +32,8 @@ interface Company {
     printer_type?: string;
     printer_paper_size?: string;
     printer_orientation?: string;
+    cash_in_categories?: string[];
+    cash_out_categories?: string[];
     backup_auto_enabled?: boolean;
     backup_auto_type?: string;
     backup_auto_frequency?: string;
@@ -46,6 +48,19 @@ interface BackupItem {
     automatic: boolean;
     size: number;
     created_at: string;
+}
+interface DatabaseHealth {
+    status: "healthy" | "update_required" | "schema_mismatch";
+    checked_at: string;
+    connection: string;
+    driver: string;
+    database: string;
+    applied_migrations: number;
+    total_migrations: number;
+    pending_migrations: string[];
+    missing_tables: string[];
+    missing_columns: { table: string; column: string }[];
+    extra_tables: string[];
 }
 interface PermissionItem {
     name: string;
@@ -67,9 +82,10 @@ const props = defineProps<{
     canDeleteData: boolean;
     cleanupCounts: Record<string, number>;
     backups: BackupItem[];
+    databaseHealth: DatabaseHealth | null;
 }>();
 const c = props.setting ?? {};
-const activeTab = ref<"company" | "printer" | "roles" | "backup" | "cleanup">("company");
+const activeTab = ref<"company" | "printer" | "cashInCategories" | "cashCategories" | "roles" | "database" | "backup" | "cleanup">("company");
 const savingRole = ref<number | null>(null);
 const rolePermissions = reactive<Record<number, string[]>>(
     Object.fromEntries(
@@ -130,6 +146,70 @@ const submit = () =>
     form
         .transform((data) => ({ ...data, _method: "put" }))
         .post(route("company.update"), { forceFormData: true });
+const cashCategoryForm = useForm({
+    cash_out_categories: [
+        ...(c.cash_out_categories ?? [
+            "Operasional",
+            "Pembelian Barang",
+            "Transportasi",
+            "Gaji & Upah",
+            "Sewa",
+            "Listrik & Internet",
+            "Perawatan",
+            "Pajak & Administrasi",
+            "Lainnya",
+        ]),
+    ],
+});
+const cashInCategoryForm = useForm({
+    cash_in_categories: [
+        ...(c.cash_in_categories ?? [
+            "Penjualan Tunai",
+            "Setoran Modal",
+            "Pendapatan Jasa",
+            "Pengembalian Dana",
+            "Pendapatan Lainnya",
+        ]),
+    ],
+});
+const newCashInCategory = ref("");
+const addCashInCategory = () => {
+    const category = newCashInCategory.value.trim();
+    if (!category) return;
+    const exists = cashInCategoryForm.cash_in_categories.some(
+        (item) => item.toLocaleLowerCase("id-ID") === category.toLocaleLowerCase("id-ID"),
+    );
+    if (!exists) cashInCategoryForm.cash_in_categories.push(category);
+    newCashInCategory.value = "";
+    cashInCategoryForm.clearErrors();
+};
+const removeCashInCategory = (index: number) => {
+    cashInCategoryForm.cash_in_categories.splice(index, 1);
+    cashInCategoryForm.clearErrors();
+};
+const saveCashInCategories = () =>
+    cashInCategoryForm.put(route("company.cash-in-categories.update"), {
+        preserveScroll: true,
+    });
+const newCashOutCategory = ref("");
+const addCashOutCategory = () => {
+    const category = newCashOutCategory.value.trim();
+    if (!category) return;
+    const exists = cashCategoryForm.cash_out_categories.some(
+        (item) => item.toLocaleLowerCase("id-ID") === category.toLocaleLowerCase("id-ID"),
+    );
+    if (!exists) cashCategoryForm.cash_out_categories.push(category);
+    newCashOutCategory.value = "";
+    cashCategoryForm.clearErrors();
+};
+const removeCashOutCategory = (index: number) => {
+    cashCategoryForm.cash_out_categories.splice(index, 1);
+    cashCategoryForm.clearErrors();
+};
+const saveCashOutCategories = () =>
+    cashCategoryForm.put(route("company.cash-out-categories.update"), {
+        preserveScroll: true,
+    });
 const togglePermission = (roleId: number, permission: string) => {
     const selected = rolePermissions[roleId];
     if (selected.includes(permission)) {
@@ -210,6 +290,47 @@ const formatBytes = (bytes: number) => {
 };
 const formatDateTime = (value: string) =>
     new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+const checkingDatabase = ref(false);
+const databaseMigrationModal = ref(false);
+const databaseMigrationForm = useForm({
+    password: "",
+    confirmation: "",
+    database: "",
+});
+const refreshDatabaseHealth = () => {
+    checkingDatabase.value = true;
+    router.reload({
+        only: ["databaseHealth"],
+        onFinish: () => (checkingDatabase.value = false),
+    });
+};
+const openDatabaseMigration = () => {
+    databaseMigrationForm.reset();
+    databaseMigrationForm.clearErrors();
+    databaseMigrationModal.value = true;
+};
+const closeDatabaseMigration = () => {
+    if (databaseMigrationForm.processing) return;
+    databaseMigrationModal.value = false;
+    databaseMigrationForm.reset();
+    databaseMigrationForm.clearErrors();
+};
+const migrateDatabase = () =>
+    databaseMigrationForm.post(route("company.database.migrate"), {
+        preserveScroll: true,
+        onSuccess: closeDatabaseMigration,
+    });
+const databaseStatusLabel = computed(() => {
+    if (props.databaseHealth?.status === "healthy") return "Database Sesuai";
+    if (props.databaseHealth?.status === "update_required") return "Pembaruan Tersedia";
+    return "Struktur Tidak Sesuai";
+});
+const databaseIssueCount = computed(
+    () =>
+        (props.databaseHealth?.pending_migrations.length ?? 0) +
+        (props.databaseHealth?.missing_tables.length ?? 0) +
+        (props.databaseHealth?.missing_columns.length ?? 0),
+);
 </script>
 <template>
     <Head title="Profil Perusahaan" /><AuthenticatedLayout
@@ -221,7 +342,7 @@ const formatDateTime = (value: string) =>
                 perhitungan.
             </p>
         </div>
-        <div class="mb-5 flex gap-2 border-b border-slate-200" role="tablist">
+        <div class="mb-5 flex flex-wrap gap-2 border-b border-slate-200" role="tablist">
             <button
                 type="button"
                 role="tab"
@@ -245,12 +366,43 @@ const formatDateTime = (value: string) =>
             <button
                 type="button"
                 role="tab"
+                :aria-selected="activeTab === 'cashInCategories'"
+                class="border-b-2 px-4 py-3 text-sm font-semibold transition"
+                :class="activeTab === 'cashInCategories' ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'"
+                @click="activeTab = 'cashInCategories'"
+            >
+                Kategori Kas Masuk
+            </button>
+            <button
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'cashCategories'"
+                class="border-b-2 px-4 py-3 text-sm font-semibold transition"
+                :class="activeTab === 'cashCategories' ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'"
+                @click="activeTab = 'cashCategories'"
+            >
+                Kategori Kas Keluar
+            </button>
+            <button
+                type="button"
+                role="tab"
                 :aria-selected="activeTab === 'roles'"
                 class="border-b-2 px-4 py-3 text-sm font-semibold transition"
                 :class="activeTab === 'roles' ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'"
                 @click="activeTab = 'roles'"
             >
                 Akses Role
+            </button>
+            <button
+                v-if="props.canDeleteData"
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'database'"
+                class="border-b-2 px-4 py-3 text-sm font-semibold transition"
+                :class="activeTab === 'database' ? 'border-violet-500 text-violet-600' : 'border-transparent text-slate-500 hover:text-violet-600'"
+                @click="activeTab = 'database'"
+            >
+                Pengecekan Database
             </button>
             <button
                 v-if="props.canDeleteData"
@@ -505,6 +657,140 @@ const formatDateTime = (value: string) =>
             </div>
         </form>
 
+        <form
+            v-show="activeTab === 'cashInCategories'"
+            class="space-y-5"
+            @submit.prevent="saveCashInCategories"
+        >
+            <section class="panel p-5">
+                <div class="mb-5">
+                    <h2 class="text-lg font-bold">Kategori Kas Masuk</h2>
+                    <p class="mt-1 text-sm text-slate-500">
+                        Daftar ini menjadi pilihan dropdown saat mencatat Kas Masuk manual.
+                        Pembayaran invoice dan faktur tetap dicatat otomatis oleh sistem.
+                    </p>
+                </div>
+                <div class="flex flex-col gap-3 sm:flex-row">
+                    <AppInput
+                        v-model="newCashInCategory"
+                        placeholder="Contoh: Pendapatan Sewa"
+                        maxlength="100"
+                        @keydown.enter.prevent="addCashInCategory"
+                    />
+                    <AppButton type="button" variant="secondary" @click="addCashInCategory">
+                        + Tambah Kategori
+                    </AppButton>
+                </div>
+                <div class="mt-5 overflow-hidden rounded-xl border border-slate-200">
+                    <div
+                        v-for="(item, index) in cashInCategoryForm.cash_in_categories"
+                        :key="`${item}-${index}`"
+                        class="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 last:border-b-0"
+                    >
+                        <span class="text-sm font-medium text-slate-800">{{ item }}</span>
+                        <button
+                            type="button"
+                            class="rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                            :aria-label="`Hapus kategori ${item}`"
+                            @click="removeCashInCategory(index)"
+                        >
+                            Hapus
+                        </button>
+                    </div>
+                    <p
+                        v-if="cashInCategoryForm.cash_in_categories.length === 0"
+                        class="px-4 py-8 text-center text-sm text-slate-500"
+                    >
+                        Tambahkan minimal satu kategori.
+                    </p>
+                </div>
+            </section>
+            <p
+                v-if="Object.keys(cashInCategoryForm.errors).length"
+                class="text-sm text-red-600"
+            >
+                {{ Object.values(cashInCategoryForm.errors)[0] }}
+            </p>
+            <div class="flex justify-end">
+                <AppButton
+                    type="submit"
+                    :disabled="
+                        cashInCategoryForm.processing ||
+                        cashInCategoryForm.cash_in_categories.length === 0
+                    "
+                >
+                    Simpan Kategori Kas Masuk
+                </AppButton>
+            </div>
+        </form>
+
+        <form
+            v-show="activeTab === 'cashCategories'"
+            class="space-y-5"
+            @submit.prevent="saveCashOutCategories"
+        >
+            <section class="panel p-5">
+                <div class="mb-5">
+                    <h2 class="text-lg font-bold">Kategori Kas Keluar</h2>
+                    <p class="mt-1 text-sm text-slate-500">
+                        Daftar ini menjadi pilihan dropdown saat mencatat Kas Keluar manual.
+                        Ongkir driver dan komisi faktur tetap dicatat otomatis oleh sistem.
+                    </p>
+                </div>
+                <div class="flex flex-col gap-3 sm:flex-row">
+                    <AppInput
+                        v-model="newCashOutCategory"
+                        placeholder="Contoh: Biaya Kebersihan"
+                        maxlength="100"
+                        @keydown.enter.prevent="addCashOutCategory"
+                    />
+                    <AppButton type="button" variant="secondary" @click="addCashOutCategory">
+                        + Tambah Kategori
+                    </AppButton>
+                </div>
+                <div class="mt-5 overflow-hidden rounded-xl border border-slate-200">
+                    <div
+                        v-for="(item, index) in cashCategoryForm.cash_out_categories"
+                        :key="`${item}-${index}`"
+                        class="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 last:border-b-0"
+                    >
+                        <span class="text-sm font-medium text-slate-800">{{ item }}</span>
+                        <button
+                            type="button"
+                            class="rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                            :aria-label="`Hapus kategori ${item}`"
+                            @click="removeCashOutCategory(index)"
+                        >
+                            Hapus
+                        </button>
+                    </div>
+                    <p
+                        v-if="cashCategoryForm.cash_out_categories.length === 0"
+                        class="px-4 py-8 text-center text-sm text-slate-500"
+                    >
+                        Tambahkan minimal satu kategori.
+                    </p>
+                </div>
+            </section>
+            <p
+                v-if="Object.keys(cashCategoryForm.errors).length"
+                class="text-sm text-red-600"
+            >
+                {{ Object.values(cashCategoryForm.errors)[0] }}
+            </p>
+            <div class="flex justify-end">
+                <AppButton
+                    type="submit"
+                    :disabled="
+                        cashCategoryForm.processing ||
+                        cashCategoryForm.cash_out_categories.length === 0
+                    "
+                >
+                    Simpan Kategori Kas Keluar
+                </AppButton>
+            </div>
+        </form>
+
         <section v-show="activeTab === 'roles'" class="space-y-5">
             <div class="panel grid gap-5 p-5 lg:grid-cols-[1fr_320px] lg:items-end">
                 <div>
@@ -587,6 +873,129 @@ const formatDateTime = (value: string) =>
                     </section>
                 </div>
             </article>
+        </section>
+
+        <section v-if="props.canDeleteData" v-show="activeTab === 'database'" class="space-y-5">
+            <div class="flex flex-col gap-4 rounded-xl border border-violet-200 bg-violet-50 p-5 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-violet-900">Pengecekan Database</h2>
+                    <p class="mt-2 max-w-3xl text-sm leading-6 text-violet-800">
+                        Memeriksa migrasi baru serta mencocokkan tabel dan kolom database aktif dengan struktur aplikasi.
+                        Pemeriksaan ini tidak mengubah atau menghapus data.
+                    </p>
+                </div>
+                <div class="flex shrink-0 flex-wrap gap-2">
+                    <button
+                        type="button"
+                        class="rounded-lg border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 disabled:opacity-50"
+                        :disabled="checkingDatabase"
+                        @click="refreshDatabaseHealth"
+                    >
+                        {{ checkingDatabase ? "Memeriksa..." : "Periksa Ulang" }}
+                    </button>
+                    <AppButton
+                        v-if="props.databaseHealth?.pending_migrations.length"
+                        type="button"
+                        @click="openDatabaseMigration"
+                    >
+                        Jalankan Pembaruan
+                    </AppButton>
+                </div>
+            </div>
+
+            <template v-if="props.databaseHealth">
+                <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <article class="panel p-5">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Status</p>
+                        <div class="mt-3 flex items-center gap-3">
+                            <span
+                                class="flex h-10 w-10 items-center justify-center rounded-full text-lg font-bold"
+                                :class="props.databaseHealth.status === 'healthy' ? 'bg-emerald-100 text-emerald-700' : props.databaseHealth.status === 'update_required' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'"
+                            >
+                                {{ props.databaseHealth.status === "healthy" ? "✓" : "!" }}
+                            </span>
+                            <strong
+                                :class="props.databaseHealth.status === 'healthy' ? 'text-emerald-700' : props.databaseHealth.status === 'update_required' ? 'text-amber-700' : 'text-red-700'"
+                            >
+                                {{ databaseStatusLabel }}
+                            </strong>
+                        </div>
+                    </article>
+                    <article class="panel p-5">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Koneksi Aktif</p>
+                        <p class="mt-3 text-lg font-bold uppercase text-slate-900">{{ props.databaseHealth.driver }}</p>
+                        <p class="mt-1 truncate text-sm text-slate-500">{{ props.databaseHealth.connection }} / {{ props.databaseHealth.database }}</p>
+                    </article>
+                    <article class="panel p-5">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Migrasi</p>
+                        <p class="mt-3 text-lg font-bold text-slate-900">{{ props.databaseHealth.applied_migrations }} / {{ props.databaseHealth.total_migrations }}</p>
+                        <p class="mt-1 text-sm text-slate-500">{{ props.databaseHealth.pending_migrations.length }} pembaruan tertunda</p>
+                    </article>
+                    <article class="panel p-5">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Perbedaan Struktur</p>
+                        <p class="mt-3 text-lg font-bold" :class="databaseIssueCount ? 'text-red-700' : 'text-emerald-700'">{{ databaseIssueCount }}</p>
+                        <p class="mt-1 text-sm text-slate-500">migrasi, tabel, atau kolom perlu ditangani</p>
+                    </article>
+                </div>
+
+                <div
+                    v-if="props.databaseHealth.status === 'healthy'"
+                    class="rounded-xl border border-emerald-200 bg-emerald-50 p-5"
+                >
+                    <h3 class="font-bold text-emerald-800">Struktur database sudah sesuai</h3>
+                    <p class="mt-1 text-sm leading-6 text-emerald-700">
+                        Semua migrasi aplikasi telah dijalankan dan tidak ditemukan tabel atau kolom wajib yang hilang.
+                    </p>
+                </div>
+
+                <div v-else class="grid gap-4 lg:grid-cols-2">
+                    <article v-if="props.databaseHealth.pending_migrations.length" class="panel overflow-hidden">
+                        <header class="border-b border-amber-200 bg-amber-50 px-5 py-4">
+                            <h3 class="font-bold text-amber-900">Migrasi Belum Dijalankan</h3>
+                            <p class="mt-1 text-sm text-amber-700">Pembaruan resmi aplikasi yang aman dijalankan melalui tombol pembaruan.</p>
+                        </header>
+                        <ul class="divide-y divide-slate-100 text-sm">
+                            <li v-for="migration in props.databaseHealth.pending_migrations" :key="migration" class="break-all px-5 py-3 font-mono text-slate-700">{{ migration }}</li>
+                        </ul>
+                    </article>
+                    <article v-if="props.databaseHealth.missing_tables.length" class="panel overflow-hidden">
+                        <header class="border-b border-red-200 bg-red-50 px-5 py-4">
+                            <h3 class="font-bold text-red-900">Tabel Wajib Tidak Ditemukan</h3>
+                        </header>
+                        <ul class="divide-y divide-slate-100 text-sm">
+                            <li v-for="table in props.databaseHealth.missing_tables" :key="table" class="px-5 py-3 font-mono text-slate-700">{{ table }}</li>
+                        </ul>
+                    </article>
+                    <article v-if="props.databaseHealth.missing_columns.length" class="panel overflow-hidden">
+                        <header class="border-b border-red-200 bg-red-50 px-5 py-4">
+                            <h3 class="font-bold text-red-900">Kolom Wajib Tidak Ditemukan</h3>
+                        </header>
+                        <ul class="max-h-80 divide-y divide-slate-100 overflow-y-auto text-sm">
+                            <li v-for="item in props.databaseHealth.missing_columns" :key="`${item.table}.${item.column}`" class="px-5 py-3 font-mono text-slate-700">{{ item.table }}.{{ item.column }}</li>
+                        </ul>
+                    </article>
+                </div>
+
+                <div v-if="props.databaseHealth.extra_tables.length" class="rounded-xl border border-sky-200 bg-sky-50 p-5">
+                    <h3 class="font-bold text-sky-900">Tabel Tambahan Terdeteksi</h3>
+                    <p class="mt-1 text-sm leading-6 text-sky-700">
+                        Tabel tambahan tidak dianggap sebagai kerusakan dan tidak akan dihapus otomatis:
+                        <span class="font-mono">{{ props.databaseHealth.extra_tables.join(", ") }}</span>
+                    </p>
+                </div>
+
+                <div v-if="props.databaseHealth.status === 'schema_mismatch'" class="rounded-xl border border-red-200 bg-red-50 p-5 text-sm leading-6 text-red-700">
+                    <strong>Perlu perhatian:</strong> buat backup database terlebih dahulu. Tombol pembaruan hanya menjalankan migrasi resmi yang masih tertunda dan tidak menghapus tabel tambahan.
+                    Jika migrasi sudah lengkap tetapi tabel atau kolom masih hilang, periksa log deployment atau pulihkan database dari backup.
+                </div>
+
+                <p class="text-xs text-slate-500">
+                    Pemeriksaan terakhir: {{ formatDateTime(props.databaseHealth.checked_at) }}
+                </p>
+            </template>
+            <div v-else class="panel p-8 text-center text-sm text-slate-500">
+                Data pemeriksaan belum tersedia.
+            </div>
         </section>
 
         <section v-if="props.canDeleteData" v-show="activeTab === 'backup'" class="space-y-5">
@@ -730,6 +1139,36 @@ const formatDateTime = (value: string) =>
                         :disabled="cleanupForm.processing || cleanupForm.confirmation !== 'HAPUS DATA' || !cleanupForm.password"
                     >
                         {{ cleanupForm.processing ? 'Menghapus...' : 'Hapus Permanen' }}
+                    </button>
+                </div>
+            </form>
+        </AppModal>
+        <AppModal :show="databaseMigrationModal" title="Perbarui Database" @close="closeDatabaseMigration">
+            <form class="space-y-4" @submit.prevent="migrateDatabase">
+                <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                    Sistem akan menjalankan seluruh migrasi resmi yang belum diterapkan. Buat backup database sebelum melanjutkan pembaruan pada server produksi.
+                </div>
+                <label class="block">
+                    <span class="label">Password akun Super Admin</span>
+                    <AppInput v-model="databaseMigrationForm.password" type="password" autocomplete="current-password" required />
+                    <span v-if="databaseMigrationForm.errors.password" class="mt-1 block text-xs text-red-600">{{ databaseMigrationForm.errors.password }}</span>
+                </label>
+                <label class="block">
+                    <span class="label">Ketik <strong>PERBARUI DATABASE</strong> untuk melanjutkan</span>
+                    <AppInput v-model="databaseMigrationForm.confirmation" autocomplete="off" placeholder="PERBARUI DATABASE" required />
+                    <span v-if="databaseMigrationForm.errors.confirmation" class="mt-1 block text-xs text-red-600">{{ databaseMigrationForm.errors.confirmation }}</span>
+                </label>
+                <div v-if="databaseMigrationForm.errors.database" role="alert" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {{ databaseMigrationForm.errors.database }}
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700" :disabled="databaseMigrationForm.processing" @click="closeDatabaseMigration">Batal</button>
+                    <button
+                        type="submit"
+                        class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="databaseMigrationForm.processing || databaseMigrationForm.confirmation !== 'PERBARUI DATABASE' || !databaseMigrationForm.password"
+                    >
+                        {{ databaseMigrationForm.processing ? "Memperbarui..." : "Perbarui Database" }}
                     </button>
                 </div>
             </form>

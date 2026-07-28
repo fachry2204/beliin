@@ -6,6 +6,7 @@ use App\Models\CompanySetting;
 use App\Services\AuditLogService;
 use App\Services\BackupService;
 use App\Services\DatabaseCleanupService;
+use App\Services\DatabaseHealthService;
 use App\Support\RoleAccessCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,7 +19,7 @@ use Spatie\Permission\Models\Role;
 
 class CompanySettingController extends Controller
 {
-    public function __construct(private AuditLogService $audit, private DatabaseCleanupService $cleanup, private BackupService $backups) {}
+    public function __construct(private AuditLogService $audit, private DatabaseCleanupService $cleanup, private BackupService $backups, private DatabaseHealthService $databaseHealth) {}
 
     public function edit()
     {
@@ -44,6 +45,7 @@ class CompanySettingController extends Controller
             'canDeleteData' => auth()->user()->hasRole('Super Admin'),
             'cleanupCounts' => auth()->user()->hasRole('Super Admin') ? $this->cleanup->counts() : [],
             'backups' => auth()->user()->hasRole('Super Admin') ? $this->backups->all() : [],
+            'databaseHealth' => auth()->user()->hasRole('Super Admin') ? $this->databaseHealth->check() : null,
         ]);
     }
 
@@ -105,6 +107,92 @@ class CompanySettingController extends Controller
         $this->audit->record('update', 'role_access', $role, ['permissions' => $old], ['permissions' => $permissions]);
 
         return back()->with('success', "Akses role {$role->name} diperbarui.");
+    }
+
+    public function updateCashOutCategories(Request $request)
+    {
+        $this->authorize('settings.manage');
+        $data = $request->validate([
+            'cash_out_categories' => ['required', 'array', 'min:1', 'max:50'],
+            'cash_out_categories.*' => ['required', 'string', 'max:100'],
+        ], [
+            'cash_out_categories.required' => 'Minimal satu kategori Kas Keluar harus tersedia.',
+            'cash_out_categories.min' => 'Minimal satu kategori Kas Keluar harus tersedia.',
+            'cash_out_categories.max' => 'Maksimal 50 kategori Kas Keluar.',
+        ]);
+
+        $categories = collect($data['cash_out_categories'])
+            ->map(fn (string $category) => trim($category))
+            ->filter()
+            ->unique(fn (string $category) => mb_strtolower($category))
+            ->values()
+            ->all();
+
+        if ($categories === []) {
+            throw ValidationException::withMessages([
+                'cash_out_categories' => 'Minimal satu kategori Kas Keluar harus tersedia.',
+            ]);
+        }
+
+        $setting = CompanySetting::firstOrCreate([], [
+            'company_name' => config('app.name', 'Invoice'),
+            'invoice_prefix' => 'INV',
+        ]);
+        $old = $setting->exists ? $setting->cash_out_categories : null;
+        $setting->cash_out_categories = $categories;
+        $setting->save();
+        $this->audit->record(
+            'update',
+            'company_setting',
+            $setting,
+            ['cash_out_categories' => $old],
+            ['cash_out_categories' => $categories],
+        );
+
+        return back()->with('success', 'Kategori Kas Keluar diperbarui.');
+    }
+
+    public function updateCashInCategories(Request $request)
+    {
+        $this->authorize('settings.manage');
+        $data = $request->validate([
+            'cash_in_categories' => ['required', 'array', 'min:1', 'max:50'],
+            'cash_in_categories.*' => ['required', 'string', 'max:100'],
+        ], [
+            'cash_in_categories.required' => 'Minimal satu kategori Kas Masuk harus tersedia.',
+            'cash_in_categories.min' => 'Minimal satu kategori Kas Masuk harus tersedia.',
+            'cash_in_categories.max' => 'Maksimal 50 kategori Kas Masuk.',
+        ]);
+
+        $categories = collect($data['cash_in_categories'])
+            ->map(fn (string $category) => trim($category))
+            ->filter()
+            ->unique(fn (string $category) => mb_strtolower($category))
+            ->values()
+            ->all();
+
+        if ($categories === []) {
+            throw ValidationException::withMessages([
+                'cash_in_categories' => 'Minimal satu kategori Kas Masuk harus tersedia.',
+            ]);
+        }
+
+        $setting = CompanySetting::firstOrCreate([], [
+            'company_name' => config('app.name', 'Invoice'),
+            'invoice_prefix' => 'INV',
+        ]);
+        $old = $setting->cash_in_categories;
+        $setting->cash_in_categories = $categories;
+        $setting->save();
+        $this->audit->record(
+            'update',
+            'company_setting',
+            $setting,
+            ['cash_in_categories' => $old],
+            ['cash_in_categories' => $categories],
+        );
+
+        return back()->with('success', 'Kategori Kas Masuk diperbarui.');
     }
 
     public function purgeData(Request $request)
@@ -190,6 +278,37 @@ class CompanySettingController extends Controller
         $this->backups->delete($filename);
 
         return back()->with('success', 'Arsip backup dihapus.');
+    }
+
+    public function migrateDatabase(Request $request)
+    {
+        $this->authorize('settings.manage');
+        abort_unless($request->user()->hasRole('Super Admin'), 403);
+        $request->validate([
+            'password' => ['required', 'current_password'],
+            'confirmation' => ['required', Rule::in(['PERBARUI DATABASE'])],
+        ], [
+            'password.current_password' => 'Password akun tidak sesuai.',
+            'confirmation.in' => 'Ketik PERBARUI DATABASE untuk melanjutkan.',
+        ]);
+
+        try {
+            $result = $this->databaseHealth->migrate();
+            $this->audit->record('update', 'database_schema', null, $result['before'], $result['after']);
+
+            return back()->with(
+                'success',
+                $result['after']['status'] === 'healthy'
+                    ? 'Pembaruan database selesai. Struktur database sudah sesuai.'
+                    : 'Migrasi selesai, tetapi masih ditemukan perbedaan struktur yang perlu diperiksa manual.',
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors([
+                'database' => 'Pembaruan database gagal: '.$exception->getMessage(),
+            ]);
+        }
     }
 
     private function authorizeBackup(Request $request): void

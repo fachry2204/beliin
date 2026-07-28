@@ -41,8 +41,13 @@ const props = defineProps<{
     rows: PageRows;
     typeTotal: number;
     cashBalance: number;
+    cashInCategories: string[];
+    cashOutCategories: string[];
 }>();
 const incoming = computed(() => props.type === "in");
+const configuredCategories = computed(() =>
+    incoming.value ? props.cashInCategories : props.cashOutCategories,
+);
 const title = computed(() => (incoming.value ? "Cash Masuk" : "Cash Keluar"));
 const endpoint = computed(() => (incoming.value ? "cash-in" : "cash-out"));
 const search = ref(new URLSearchParams(location.search).get("search") ?? "");
@@ -329,15 +334,25 @@ const remove = (row: CashRow) => {
                 </label>
                 <label>
                     <span class="label">Kategori *</span>
-                    <AppInput
-                        v-model="form.category"
-                        :placeholder="
-                            incoming
-                                ? 'Contoh: Penjualan'
-                                : 'Contoh: Operasional'
-                        "
-                        required
-                    />
+                    <AppSelect v-model="form.category" required>
+                        <option value="" disabled>Pilih kategori</option>
+                        <option
+                            v-if="
+                                form.category &&
+                                !configuredCategories.includes(form.category)
+                            "
+                            :value="form.category"
+                        >
+                            {{ form.category }} (kategori lama)
+                        </option>
+                        <option
+                            v-for="item in configuredCategories"
+                            :key="item"
+                            :value="item"
+                        >
+                            {{ item }}
+                        </option>
+                    </AppSelect>
                 </label>
                 <label class="sm:col-span-2">
                     <span class="label">Keterangan *</span>
