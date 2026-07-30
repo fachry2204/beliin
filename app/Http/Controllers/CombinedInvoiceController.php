@@ -32,6 +32,9 @@ class CombinedInvoiceController extends Controller
     {
         $this->authorize('invoices.view');
         $canViewProfit = $request->user()->can('profit.view');
+        $statusFilter = in_array($request->input('status'), ['paid', 'partially_paid', 'unpaid'], true)
+            ? $request->input('status')
+            : null;
         $statusSummary = [
             'paid' => CombinedInvoiceDocument::query()
                 ->where('status', 'closed')
@@ -62,6 +65,13 @@ class CombinedInvoiceController extends Controller
                     ->where('name', 'like', "%{$search}%")
                     ->orWhere('company_name', 'like', "%{$search}%")
                     ->orWhere('customer_code', 'like', "%{$search}%"))))
+            ->when($statusFilter === 'paid', fn (Builder $query) => $query->where('status', 'closed'))
+            ->when($statusFilter === 'partially_paid', fn (Builder $query) => $query
+                ->where('status', 'open')
+                ->whereHas('invoices', fn (Builder $query) => $query->where('paid_amount', '>', 0)))
+            ->when($statusFilter === 'unpaid', fn (Builder $query) => $query
+                ->where('status', 'open')
+                ->whereDoesntHave('invoices', fn (Builder $query) => $query->where('paid_amount', '>', 0)))
             ->latest('opened_at')
             ->latest('id')
             ->paginate(15)

@@ -55,12 +55,30 @@ type PaymentStatus = "paid" | "partially_paid" | "unpaid";
 
 const params = new URLSearchParams(location.search);
 const search = ref(params.get("search") ?? "");
-const filter = () =>
+const activeStatus = ref<PaymentStatus | null>(
+    (["paid", "partially_paid", "unpaid"] as const).includes(
+        params.get("status") as PaymentStatus,
+    )
+        ? (params.get("status") as PaymentStatus)
+        : null,
+);
+
+const applyFilters = () =>
     router.get(
         route("combined-invoices.index"),
-        { search: search.value || undefined },
-        { preserveState: true },
+        {
+            search: search.value || undefined,
+            status: activeStatus.value || undefined,
+        },
+        { preserveState: true, preserveScroll: true },
     );
+
+const filter = () => applyFilters();
+
+const filterByStatus = (status: PaymentStatus) => {
+    activeStatus.value = activeStatus.value === status ? null : status;
+    applyFilters();
+};
 
 const money = (value: string | number) =>
     new Intl.NumberFormat("id-ID", {
@@ -157,18 +175,35 @@ const statusCards = [
         </div>
 
         <div class="mb-5 grid gap-4 md:grid-cols-3">
-            <article
+            <button
                 v-for="card in statusCards"
                 :key="card.key"
-                class="rounded-xl border p-5 shadow-sm"
-                :class="card.className"
+                type="button"
+                class="rounded-xl border p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2"
+                :class="[
+                    card.className,
+                    activeStatus === card.key
+                        ? 'ring-2 ring-sky-600 ring-offset-2'
+                        : '',
+                ]"
+                :aria-pressed="activeStatus === card.key"
+                :aria-label="`Tampilkan ${card.label}`"
+                @click="filterByStatus(card.key)"
             >
-                <p class="text-sm font-semibold">{{ card.label }}</p>
+                <div class="flex items-start justify-between gap-3">
+                    <p class="text-sm font-semibold">{{ card.label }}</p>
+                    <span
+                        v-if="activeStatus === card.key"
+                        class="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-semibold shadow-sm"
+                    >
+                        Filter aktif
+                    </span>
+                </div>
                 <p class="mt-2 text-3xl font-bold">
                     {{ props.statusSummary[card.key] }}
                 </p>
                 <p class="mt-1 text-xs opacity-75">{{ card.description }}</p>
-            </article>
+            </button>
         </div>
 
         <section class="panel">
@@ -262,8 +297,11 @@ const statusCards = [
                                 :colspan="canViewProfit ? 11 : 10"
                                 class="py-12 text-center text-slate-500"
                             >
-                                Belum ada Faktur. Klik “Faktur Baru” untuk memilih
-                                pelanggan dan invoice.
+                                {{
+                                    activeStatus
+                                        ? "Tidak ada Faktur dengan status yang dipilih."
+                                        : "Belum ada Faktur. Klik Faktur Baru untuk memilih pelanggan dan invoice."
+                                }}
                             </td>
                         </tr>
                     </tbody>

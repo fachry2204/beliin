@@ -1589,6 +1589,20 @@ class InvoiceDomainTest extends TestCase
                 ->where('documents.data.0.paid_total', 400000)
                 ->where('documents.data.0.remaining_total', 1600000));
 
+        $this->get(route('combined-invoices.index', ['status' => 'partially_paid']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('CombinedInvoices/Index')
+                ->where('documents.total', 1)
+                ->where('documents.data.0.id', $document->id));
+
+        $this->get(route('combined-invoices.index', ['status' => 'unpaid']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('CombinedInvoices/Index')
+                ->where('statusSummary.partially_paid', 1)
+                ->where('documents.total', 0));
+
         $this->get(route('combined-invoices.show', $document))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
