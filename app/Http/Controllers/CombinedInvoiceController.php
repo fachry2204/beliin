@@ -32,6 +32,19 @@ class CombinedInvoiceController extends Controller
     {
         $this->authorize('invoices.view');
         $canViewProfit = $request->user()->can('profit.view');
+        $statusSummary = [
+            'paid' => CombinedInvoiceDocument::query()
+                ->where('status', 'closed')
+                ->count(),
+            'partially_paid' => CombinedInvoiceDocument::query()
+                ->where('status', 'open')
+                ->whereHas('invoices', fn (Builder $query) => $query->where('paid_amount', '>', 0))
+                ->count(),
+            'unpaid' => CombinedInvoiceDocument::query()
+                ->where('status', 'open')
+                ->whereDoesntHave('invoices', fn (Builder $query) => $query->where('paid_amount', '>', 0))
+                ->count(),
+        ];
 
         $documents = CombinedInvoiceDocument::query()
             ->with('customer:id,customer_code,name,company_name,phone')
@@ -56,6 +69,7 @@ class CombinedInvoiceController extends Controller
 
         return Inertia::render('CombinedInvoices/Index', [
             'documents' => $documents,
+            'statusSummary' => $statusSummary,
             'canViewProfit' => $canViewProfit,
             'canCreate' => $request->user()->can('invoices.create'),
         ]);

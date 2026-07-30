@@ -19,9 +19,15 @@ const props = withDefaults(
         filters: Filters;
         searchPlaceholder?: string;
         showStatus?: boolean;
+        showFactureStatus?: boolean;
         showCashType?: boolean;
     }>(),
-    { searchPlaceholder: "Cari data...", showStatus: false, showCashType: false },
+    {
+        searchPlaceholder: "Cari data...",
+        showStatus: false,
+        showFactureStatus: false,
+        showCashType: false,
+    },
 );
 const search = ref(props.filters.search || "");
 const dateFrom = ref(props.filters.date_from || "");
@@ -39,7 +45,10 @@ const navigate = () =>
             search: search.value || undefined,
             date_from: dateFrom.value || undefined,
             date_to: dateTo.value || undefined,
-            status: props.showStatus ? status.value || undefined : undefined,
+            status:
+                props.showStatus || props.showFactureStatus
+                    ? status.value || undefined
+                    : undefined,
             type: props.showCashType ? type.value || undefined : undefined,
         },
         { preserveState: true, replace: true },
@@ -82,6 +91,15 @@ const reset = () => {
             <label v-if="showStatus" class="lg:col-span-1">
                 <span class="label">Status Invoice</span>
                 <AppSelect v-model="status"><option value="">Semua status</option><option value="unpaid">Belum Dibayar</option><option value="partially_paid">Dibayar Sebagian</option><option value="paid">Lunas</option><option value="overdue">Jatuh Tempo</option></AppSelect>
+            </label>
+            <label v-if="showFactureStatus" class="lg:col-span-1">
+                <span class="label">Status Faktur</span>
+                <AppSelect v-model="status">
+                    <option value="">Semua status</option>
+                    <option value="unpaid">Belum Bayar</option>
+                    <option value="partially_paid">Terbayar Sebagian</option>
+                    <option value="paid">Lunas</option>
+                </AppSelect>
             </label>
             <label v-if="showCashType" class="lg:col-span-1">
                 <span class="label">Jenis Kas</span>

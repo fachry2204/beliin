@@ -291,6 +291,67 @@ class InvoiceDomainTest extends TestCase
                 ->component('Reports/Home')
                 ->where('canViewProfit', true));
 
+        $this->get(route('reports.combined-invoices', [
+            'status' => 'unpaid',
+            'search' => $facture->facture_number,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reports/CombinedInvoices')
+                ->has('rows.data', 1)
+                ->where('rows.data.0.id', $facture->id)
+                ->where('filters.status', 'unpaid'));
+
+        $invoice->update([
+            'status' => InvoiceStatus::PartiallyPaid,
+            'paid_amount' => 100000,
+            'remaining_amount' => 900000,
+        ]);
+        $this->get(route('reports.combined-invoices', [
+            'status' => 'partially_paid',
+            'search' => $facture->facture_number,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reports/CombinedInvoices')
+                ->has('rows.data', 1)
+                ->where('rows.data.0.id', $facture->id)
+                ->where('filters.status', 'partially_paid'));
+
+        $this->get(route('reports.margins', [
+            'date_from' => $factureDate,
+            'date_to' => $factureDate,
+            'search' => $facture->facture_number,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reports/Margins')
+                ->has('rows.data', 0)
+                ->where('summary.facture_count', 0)
+                ->where('summary.gross_margin_total', '0')
+                ->where('summary.net_margin_total', '0'));
+
+        $facture->update([
+            'status' => 'closed',
+            'closed_at' => now(),
+        ]);
+        $invoice->update([
+            'status' => InvoiceStatus::Paid,
+            'paid_amount' => $invoice->grand_total,
+            'remaining_amount' => 0,
+        ]);
+
+        $this->get(route('reports.combined-invoices', [
+            'status' => 'paid',
+            'search' => $facture->facture_number,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reports/CombinedInvoices')
+                ->has('rows.data', 1)
+                ->where('rows.data.0.id', $facture->id)
+                ->where('filters.status', 'paid'));
+
         $filters = ['date_from' => '2026-07-15', 'date_to' => '2026-07-15', 'search' => $invoice->invoice_number];
         $this->get(route('reports.invoices', $filters))
             ->assertOk()
@@ -1516,6 +1577,17 @@ class InvoiceDomainTest extends TestCase
             'reference_number' => $document->facture_number,
         ]);
         $this->assertCount(2, $document->invoices);
+
+        $this->get(route('combined-invoices.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('CombinedInvoices/Index')
+                ->where('statusSummary.paid', 0)
+                ->where('statusSummary.partially_paid', 1)
+                ->where('statusSummary.unpaid', 0)
+                ->where('documents.data.0.id', $document->id)
+                ->where('documents.data.0.paid_total', 400000)
+                ->where('documents.data.0.remaining_total', 1600000));
 
         $this->get(route('combined-invoices.show', $document))
             ->assertOk()

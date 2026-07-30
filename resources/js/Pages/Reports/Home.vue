@@ -15,7 +15,7 @@ const cards: ReportCard[] = [
     { title: "Laporan Invoice", description: "Pantau seluruh invoice, pembayaran, sisa tagihan, dan statusnya.", route: "reports.invoices", type: "invoice", tone: "sky" },
     { title: "Laporan Faktur", description: "Lihat faktur gabungan yang masih harus ditagihkan per pelanggan.", route: "reports.combined-invoices", type: "combined", tone: "emerald" },
     { title: "Laporan Kas", description: "Analisis arus Kas Masuk dan Kas Keluar dalam satu laporan.", route: "reports.cash", type: "cash", tone: "amber" },
-    { title: "Laporan Margin", description: "Ukur penjualan, harga pokok, margin nominal, dan persentasenya.", route: "reports.margins", type: "margin", tone: "violet", profitOnly: true },
+    { title: "Laporan Margin", description: "Ukur margin terealisasi hanya dari Faktur yang sudah dibayar lunas.", route: "reports.margins", type: "margin", tone: "violet", profitOnly: true },
 ] as ReportCard[];
 const toneClasses = {
     sky: { icon: "bg-sky-50 text-sky-600", title: "text-sky-600", button: "border-sky-300 text-sky-600 hover:bg-sky-50" },

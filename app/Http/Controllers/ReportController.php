@@ -52,6 +52,18 @@ class ReportController extends Controller
         $query = CombinedInvoiceDocument::query()
             ->when($request->date_from, fn (Builder $query, string $date) => $query->whereDate('opened_at', '>=', $date))
             ->when($request->date_to, fn (Builder $query, string $date) => $query->whereDate('opened_at', '<=', $date))
+            ->when($request->status, function (Builder $query, string $status) {
+                match ($status) {
+                    'paid' => $query->where('status', 'closed'),
+                    'partially_paid' => $query
+                        ->where('status', 'open')
+                        ->whereHas('invoices', fn (Builder $query) => $query->where('paid_amount', '>', 0)),
+                    'unpaid' => $query
+                        ->where('status', 'open')
+                        ->whereDoesntHave('invoices', fn (Builder $query) => $query->where('paid_amount', '>', 0)),
+                    default => null,
+                };
+            })
             ->when($request->search, fn (Builder $query, string $search) => $query->where(fn (Builder $query) => $query
                 ->where('facture_number', 'like', "%{$search}%")
                 ->orWhereHas('customer', fn (Builder $query) => $query
@@ -80,7 +92,7 @@ class ReportController extends Controller
         return Inertia::render('Reports/CombinedInvoices', [
             'summary' => $summary,
             'rows' => $rows,
-            'filters' => $this->filters($request),
+            'filters' => $this->filters($request, ['status']),
         ]);
     }
 
@@ -207,6 +219,7 @@ class ReportController extends Controller
     private function factureMarginQuery(Request $request): Builder
     {
         return CombinedInvoiceDocument::query()
+            ->where('status', 'closed')
             ->when($request->date_from, fn (Builder $query, string $date) => $query->whereDate('opened_at', '>=', $date))
             ->when($request->date_to, fn (Builder $query, string $date) => $query->whereDate('opened_at', '<=', $date))
             ->when($request->search, fn (Builder $query, string $search) => $query->where(fn (Builder $query) => $query

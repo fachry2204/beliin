@@ -59,7 +59,7 @@ const date = (v: string) =>
         ><template #breadcrumb>Laporan / Margin</template
         ><ReportPageHeader
             title="Laporan Margin"
-            description="Analisis penjualan, harga pokok, ongkir, komisi Faktur, dan margin bersih." /><ReportFilters
+            description="Analisis margin terealisasi dari Faktur yang sudah dibayar lunas." /><ReportFilters
             route-name="reports.margins"
             :filters="filters"
             search-placeholder="Cari nomor faktur, invoice, atau pelanggan..." />
@@ -194,7 +194,7 @@ const date = (v: string) =>
                                 colspan="9"
                                 class="py-12 text-center text-slate-500"
                             >
-                                Tidak ada data margin sesuai filter.
+                                Tidak ada Faktur lunas sesuai filter.
                             </td>
                         </tr>
                     </tbody>
