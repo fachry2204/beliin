@@ -729,20 +729,36 @@ class InvoiceDomainTest extends TestCase
         );
     }
 
-    public function test_issuing_invoice_does_not_record_price_cost_as_cash_out(): void
+    public function test_issuing_invoice_records_total_cost_as_automatic_cash_out(): void
     {
         $invoice = $this->makeInvoice();
         $this->assertSame('750000.00', $invoice->total_cost);
 
         app(InvoiceService::class)->issue($invoice->fresh(), $this->admin->id, false);
 
-        $this->assertDatabaseMissing('cash_transactions', [
+        $this->assertDatabaseHas('cash_transactions', [
             'invoice_cost_id' => $invoice->id,
-        ]);
-        $this->assertDatabaseMissing('cash_transactions', [
-            'category' => 'Harga Modal',
+            'type' => 'out',
+            'category' => 'Harga Modal Invoice',
+            'amount' => 750000,
             'reference_number' => $invoice->invoice_number,
         ]);
+
+        $cashOut = CashTransaction::where('invoice_cost_id', $invoice->id)->firstOrFail();
+        $this->assertStringContainsString($invoice->invoice_number, $cashOut->description);
+
+        $this->actingAs($this->admin)
+            ->put(route('cash-out.update', $cashOut), [
+                'transaction_date' => '2026-07-15',
+                'category' => 'Operasional',
+                'description' => 'Perubahan manual',
+                'payment_method' => 'cash',
+                'amount' => 1,
+            ])
+            ->assertStatus(422);
+
+        app(InvoiceService::class)->cancel($invoice->fresh(), $this->admin->id);
+        $this->assertDatabaseMissing('cash_transactions', ['invoice_cost_id' => $invoice->id]);
     }
 
     public function test_shipping_can_be_edited_after_invoice_is_issued_and_cash_out_is_synchronized(): void
@@ -1226,7 +1242,7 @@ class InvoiceDomainTest extends TestCase
             'shipping_cost' => 0,
             'items' => [[
                 'product_id' => $this->product->id,
-                'purchase_price' => 75000,
+                'purchase_price' => 80000,
                 'selling_price' => 120000,
                 'quantity' => 10,
                 'volume' => 1,
@@ -1237,6 +1253,12 @@ class InvoiceDomainTest extends TestCase
         $updated = app(InvoiceService::class)->updateDraft($invoice->fresh(), $data, $this->admin->id);
         $this->assertSame(InvoiceStatus::Unpaid, $updated->status);
         $this->assertSame('1200000.00', $updated->remaining_amount);
+        $this->assertDatabaseHas('cash_transactions', [
+            'invoice_cost_id' => $invoice->id,
+            'type' => 'out',
+            'amount' => 800000,
+        ]);
+        $this->assertSame(1, CashTransaction::where('invoice_cost_id', $invoice->id)->count());
 
         app(PaymentService::class)->record($updated, [
             'payment_date' => today()->toDateString(),
