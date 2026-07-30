@@ -1192,6 +1192,32 @@ class InvoiceDomainTest extends TestCase
         $this->assertDatabaseCount('invoices', 0);
     }
 
+    public function test_invoice_accepts_zero_purchase_and_selling_price(): void
+    {
+        $this->actingAs($this->admin)->post(route('invoices.store'), [
+            'customer_id' => $this->customer->id,
+            'invoice_date' => '2026-07-15',
+            'due_date' => '2026-07-22',
+            'discount_type' => 'nominal',
+            'discount_value' => 0,
+            'tax_percentage' => 0,
+            'shipping_cost' => 0,
+            'items' => [[
+                'product_id' => null,
+                'product_name' => 'Barang Gratis',
+                'unit' => 'Pcs',
+                'purchase_price' => 0,
+                'selling_price' => 0,
+                'quantity' => 1,
+            ]],
+        ])->assertRedirect();
+
+        $invoice = Invoice::query()->latest('id')->firstOrFail();
+        $this->assertSame('0.00', $invoice->grand_total);
+        $this->assertSame(0, $invoice->items->first()->purchase_price);
+        $this->assertSame(0, $invoice->items->first()->selling_price);
+    }
+
     public function test_invoice_creation_recalculates_values_and_creates_audit_log(): void
     {
         $invoice = $this->makeInvoice();
@@ -1295,8 +1321,8 @@ class InvoiceDomainTest extends TestCase
         $data = [
             'customer_id' => $this->customer->id,
             'courier_id' => $this->courier->id,
-            'invoice_date' => '2026-07-15',
-            'due_date' => '2026-07-30',
+            'invoice_date' => today()->toDateString(),
+            'due_date' => today()->addMonth()->toDateString(),
             'discount_type' => 'nominal',
             'discount_value' => 0,
             'tax_percentage' => 0,
