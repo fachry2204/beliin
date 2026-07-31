@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Exports\SalesReportExport;
 use App\Models\CashTransaction;
 use App\Models\CombinedInvoiceDocument;
+use App\Models\FactureCommission;
 use App\Models\Invoice;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,9 +19,11 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $this->authorize('reports.view');
+        $canViewProfit = $request->user()->can('profit.view');
 
         return Inertia::render('Reports/Home', [
-            'canViewProfit' => $request->user()->can('profit.view'),
+            'canViewProfit' => $canViewProfit,
+            'completeSummary' => $canViewProfit ? $this->completeSummary() : null,
         ]);
     }
 
@@ -244,6 +247,51 @@ class ReportController extends Controller
                 ->where('invoice_number', 'like', "%{$search}%")
                 ->orWhere('billing_name', 'like', "%{$search}%")
                 ->orWhere('billing_company', 'like', "%{$search}%")));
+    }
+
+    private function completeSummary(): array
+    {
+        $paidDocuments = CombinedInvoiceDocument::query()->where('status', 'closed');
+        $unpaidDocuments = CombinedInvoiceDocument::query()->where('status', 'open');
+
+        $paidInvoiceTotals = Invoice::query()
+            ->join('combined_invoice_document_invoice as link', 'link.invoice_id', '=', 'invoices.id')
+            ->whereIn('link.combined_invoice_document_id', (clone $paidDocuments)->select('id'))
+            ->selectRaw('COALESCE(SUM(invoices.grand_total), 0) as facture_total, COALESCE(SUM(invoices.gross_profit), 0) as margin_total')
+            ->first();
+
+        $unpaidFactureTotal = Invoice::query()
+            ->join('combined_invoice_document_invoice as link', 'link.invoice_id', '=', 'invoices.id')
+            ->whereIn('link.combined_invoice_document_id', (clone $unpaidDocuments)->select('id'))
+            ->sum('invoices.remaining_amount');
+
+        $invoiceShippingTotal = Invoice::query()
+            ->whereNotIn('status', [InvoiceStatus::Draft, InvoiceStatus::Cancelled])
+            ->sum('shipping_cost');
+        $factureShippingTotal = CombinedInvoiceDocument::query()->sum('shipping_cost');
+        $shippingTotal = (float) $invoiceShippingTotal + (float) $factureShippingTotal;
+        $commissionTotal = (float) FactureCommission::query()
+            ->whereHas('document', fn (Builder $query) => $query->where('status', 'closed'))
+            ->sum('commission_amount');
+        $manualCashOutTotal = (float) CashTransaction::query()
+            ->where('type', 'out')
+            ->whereNull('payment_id')
+            ->whereNull('invoice_id')
+            ->whereNull('invoice_cost_id')
+            ->whereNull('combined_invoice_document_id')
+            ->whereDoesntHave('factureCommission')
+            ->sum('amount');
+        $paidMarginTotal = (float) $paidInvoiceTotals->margin_total;
+
+        return [
+            'shipping_total' => (string) $shippingTotal,
+            'commission_total' => (string) $commissionTotal,
+            'manual_cash_out_total' => (string) $manualCashOutTotal,
+            'paid_facture_total' => (string) $paidInvoiceTotals->facture_total,
+            'unpaid_facture_total' => (string) $unpaidFactureTotal,
+            'paid_margin_total' => (string) $paidMarginTotal,
+            'net_margin_total' => (string) ($paidMarginTotal - $shippingTotal - $manualCashOutTotal - $commissionTotal),
+        ];
     }
 
     private function filters(Request $request, array $extra = []): array

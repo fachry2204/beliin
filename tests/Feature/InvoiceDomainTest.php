@@ -290,7 +290,8 @@ class InvoiceDomainTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Reports/Home')
-                ->where('canViewProfit', true));
+                ->where('canViewProfit', true)
+                ->where('completeSummary.commission_total', '0'));
 
         $this->get(route('reports.combined-invoices', [
             'status' => 'unpaid',
@@ -413,12 +414,25 @@ class InvoiceDomainTest extends TestCase
                 ->where('summary.shipping_total', '50000')
                 ->where('summary.net_margin_total', '175000'));
 
+        $this->get(route('reports.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('completeSummary.shipping_total', '50000')
+                ->where('completeSummary.commission_total', '25000')
+                ->where('completeSummary.manual_cash_out_total', '125000')
+                ->where('completeSummary.paid_facture_total', '1000000')
+                ->where('completeSummary.unpaid_facture_total', '0')
+                ->where('completeSummary.paid_margin_total', '250000')
+                ->where('completeSummary.net_margin_total', '50000'));
+
         $limitedUser = User::factory()->create(['email_verified_at' => now(), 'is_active' => true]);
         $limitedUser->givePermissionTo('reports.view');
         $this->actingAs($limitedUser)
             ->get(route('reports.index'))
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('canViewProfit', false));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canViewProfit', false)
+                ->where('completeSummary', null));
         $this->get(route('reports.margins'))->assertForbidden();
     }
 
@@ -2048,6 +2062,73 @@ class InvoiceDomainTest extends TestCase
             ->assertRedirect(route('facture-commissions.index'));
         $this->assertDatabaseMissing('facture_commissions', ['id' => $commission->id]);
         $this->assertSoftDeleted('cash_transactions', ['id' => $commissionCash->id]);
+    }
+
+    public function test_editing_facture_can_record_an_unpaid_commission(): void
+    {
+        $invoice = $this->makeInvoice();
+        $invoice->update(['status' => InvoiceStatus::Unpaid, 'issued_at' => now()]);
+        $document = app(CombinedInvoiceService::class)->create(
+            $this->customer,
+            [$invoice->id],
+            '2026-07-30',
+            $this->courier->id,
+            0,
+            $this->admin->id,
+        );
+        $payment = app(PaymentService::class)->record($invoice->fresh(), [
+            'payment_date' => '2026-07-20',
+            'amount' => 100000,
+            'payment_method' => 'transfer',
+        ], $this->admin->id);
+        app(PaymentService::class)->attachToCombinedInvoice($payment, $document, $this->admin->id);
+
+        $this->actingAs($this->admin)
+            ->get(route('combined-invoices.edit', $document))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canRecordCommission', true)
+                ->where('editableCommissionId', null)
+                ->where('canEditPaymentDates', true)
+                ->where('facturePayments.0.id', $payment->id)
+                ->where('facturePayments.0.payment_date', '2026-07-20')
+                ->where('commissionWarningPercentage', 10)
+                ->where('customers.0.invoices.0.gross_profit', $invoice->gross_profit));
+
+        $this->put(route('combined-invoices.update', $document), [
+            'customer_id' => $this->customer->id,
+            'invoice_ids' => [$invoice->id],
+            'use_due_date' => true,
+            'due_date' => '2026-08-05',
+            'courier_id' => $this->courier->id,
+            'shipping_cost' => 0,
+            'commission_enabled' => true,
+            'commission_payment_date' => '2026-07-28',
+            'commission_base' => 'margin',
+            'commission_type' => 'percentage',
+            'commission_value' => 10,
+            'commission_notes' => 'Komisi saat koreksi Faktur',
+            'payment_dates' => [$payment->id => '2026-07-25'],
+        ])->assertRedirect(route('combined-invoices.show', $document));
+
+        $this->assertDatabaseHas('facture_commissions', [
+            'combined_invoice_document_id' => $document->id,
+            'facture_payment_date' => '2026-07-28',
+            'commission_base' => 'margin',
+            'commission_type' => 'percentage',
+            'commission_value' => 10,
+            'commission_amount' => 25000,
+            'status' => 'unpaid',
+            'notes' => 'Komisi saat koreksi Faktur',
+        ]);
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'payment_date' => '2026-07-25']);
+        $this->assertDatabaseHas('cash_transactions', ['payment_id' => $payment->id, 'transaction_date' => '2026-07-25 00:00:00']);
+
+        $commission = FactureCommission::where('combined_invoice_document_id', $document->id)->firstOrFail();
+        $this->get(route('combined-invoices.edit', $document))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('editableCommissionId', $commission->id));
     }
 
     public function test_purchase_price_is_absent_from_issued_invoice_print(): void
