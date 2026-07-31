@@ -209,8 +209,17 @@ const money = (v: number | string) =>
 </script>
 <template>
     <div class="mx-4 mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-        <strong>Cara input:</strong> isi Total Modal dan Total Jual untuk seluruh QTY.
-        Harga Dasar otomatis dihitung dari Total ÷ QTY, sedangkan Margin Item = Total Jual − Total Modal.
+        <p>
+            <strong>Cara input:</strong> isi Total Modal dan Total Jual untuk seluruh QTY.
+            Harga Dasar otomatis dihitung dari Total ÷ QTY, sedangkan Margin Item = Total Jual − Total Modal.
+        </p>
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sky-200 pt-2">
+            <strong class="text-sky-900">Panduan QTY berat:</strong>
+            <span><strong>1</strong> = 1 kg</span>
+            <span><strong>0,5 / 0.5</strong> = setengah kg</span>
+            <span><strong>0,25 / 0.25</strong> = seperempat kg</span>
+            <span><strong>0,75 / 0.75</strong> = tiga perempat kg</span>
+        </div>
     </div>
     <div class="table-wrap">
         <table class="data-table min-w-[1320px]">
@@ -220,10 +229,10 @@ const money = (v: number | string) =>
                     <th v-if="canViewCost">Total Modal</th>
                     <th>Total Jual</th>
                     <th>Qty</th>
+                    <th>Satuan</th>
                     <th v-if="canViewCost">Harga Dasar Modal</th>
                     <th>Harga Dasar Jual</th>
                     <th v-if="canViewCost">Margin Item</th>
-                    <th>Satuan</th>
                     <th></th>
                 </tr>
             </thead>
@@ -328,19 +337,6 @@ const money = (v: number | string) =>
                             @update:model-value="syncUnitPrices(item)"
                         />
                     </td>
-                    <td v-if="canViewCost" class="font-medium text-amber-700">
-                        {{ money(basePurchasePrice(item)) }}
-                    </td>
-                    <td class="font-medium text-sky-700">
-                        {{ money(baseSellingPrice(item)) }}
-                    </td>
-                    <td
-                        v-if="canViewCost"
-                        class="font-semibold"
-                        :class="itemMargin(item) < 0 ? 'text-red-700' : 'text-emerald-700'"
-                    >
-                        {{ money(itemMargin(item)) }}
-                    </td>
                     <td>
                         <AppSelect
                             v-model="item.unit"
@@ -355,6 +351,19 @@ const money = (v: number | string) =>
                                 {{ unit }}
                             </option>
                         </AppSelect>
+                    </td>
+                    <td v-if="canViewCost" class="font-medium text-amber-700">
+                        {{ money(basePurchasePrice(item)) }}
+                    </td>
+                    <td class="font-medium text-sky-700">
+                        {{ money(baseSellingPrice(item)) }}
+                    </td>
+                    <td
+                        v-if="canViewCost"
+                        class="font-semibold"
+                        :class="itemMargin(item) < 0 ? 'text-red-700' : 'text-emerald-700'"
+                    >
+                        {{ money(itemMargin(item)) }}
                     </td>
                     <td>
                         <button
