@@ -147,15 +147,14 @@ class CombinedInvoiceController extends Controller
         $this->authorize('invoices.view');
         $canViewProfit = $request->user()->can('profit.view');
 
-        $hasFacturePayments = $combinedInvoice->payments()->exists();
         $deletionLockReason = $this->deletionLockReason($combinedInvoice);
 
         return Inertia::render('CombinedInvoices/Show', [
             ...$this->combinedData($combinedInvoice, $canViewProfit),
             'canViewProfit' => $canViewProfit,
             'canManagePayments' => $request->user()->can('payments.manage'),
-            'canEditDueDate' => $request->user()->can('invoices.create') && $combinedInvoice->status === 'open',
-            'canEdit' => $request->user()->can('invoices.create') && ! $hasFacturePayments && $combinedInvoice->status === 'open',
+            'canEditDueDate' => $request->user()->can('invoices.create'),
+            'canEdit' => $request->user()->can('invoices.create'),
             'canDelete' => $request->user()->can('invoices.delete'),
             'deletionLocked' => $deletionLockReason !== null,
             'deletionLockReason' => $deletionLockReason,
@@ -168,7 +167,7 @@ class CombinedInvoiceController extends Controller
     public function edit(CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.create');
-        $this->ensureEditable($combinedInvoice);
+        $canRecordCommission = request()->user()->can('profit.view');
 
         $customer = $combinedInvoice->customer;
         $invoices = $customer->invoices()
@@ -176,9 +175,12 @@ class CombinedInvoiceController extends Controller
                 $query->whereHas('combinedDocuments', fn (Builder $query) => $query->whereKey($combinedInvoice->id))
                     ->orWhere(fn (Builder $query) => $this->eligible($query));
             })
-            ->select(['id', 'customer_id', 'invoice_number', 'invoice_date', 'grand_total', 'paid_amount', 'remaining_amount'])
+            ->select(['id', 'customer_id', 'invoice_number', 'invoice_date', 'grand_total', 'paid_amount', 'remaining_amount', 'gross_profit'])
             ->orderBy('invoice_date')
             ->get();
+        if (! $canRecordCommission) {
+            $invoices->each->makeHidden('gross_profit');
+        }
 
         return Inertia::render('CombinedInvoices/Create', [
             'customers' => [[
@@ -187,6 +189,14 @@ class CombinedInvoiceController extends Controller
             ]],
             'today' => today()->toDateString(),
             'defaultDueDate' => today()->addWeek()->toDateString(),
+            'canRecordCommission' => $canRecordCommission,
+            'commissionWarningPercentage' => (float) (CompanySetting::first()?->commission_margin_warning_percentage ?? 10),
+            'canEditPaymentDates' => request()->user()->can('payments.manage'),
+            'facturePayments' => $combinedInvoice->payments()
+                ->with('invoice:id,invoice_number')
+                ->orderBy('payment_date')
+                ->orderBy('id')
+                ->get(['id', 'invoice_id', 'payment_number', 'payment_date', 'amount', 'payment_method', 'bank_name', 'reference_number', 'notes']),
             'couriers' => Courier::withTrashed()
                 ->where(fn (Builder $query) => $query->where('is_active', true)->orWhere('id', $combinedInvoice->courier_id))
                 ->orderBy('name')->get(['id', 'name', 'vehicle_type', 'license_plate', 'deleted_at']),
@@ -205,8 +215,13 @@ class CombinedInvoiceController extends Controller
     public function update(Request $request, CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.create');
-        $this->ensureEditable($combinedInvoice);
         $data = $this->validateDocument($request);
+        if ($data['commission_enabled']) {
+            $this->authorize('profit.view');
+        }
+        if ($data['payment_dates'] !== []) {
+            $this->authorize('payments.manage');
+        }
         if ((int) $data['customer_id'] !== $combinedInvoice->customer_id) {
             throw ValidationException::withMessages(['customer_id' => 'Pelanggan Faktur tidak dapat diubah.']);
         }
@@ -221,6 +236,13 @@ class CombinedInvoiceController extends Controller
             throw ValidationException::withMessages(['invoice_ids' => 'Pilihan invoice tidak valid atau sudah masuk Faktur lain.']);
         }
 
+        $paidInvoiceIds = $combinedInvoice->payments()->distinct()->pluck('invoice_id');
+        if ($paidInvoiceIds->diff($allowedIds)->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'invoice_ids' => 'Invoice yang sudah menerima pembayaran melalui Faktur ini tidak dapat dilepas.',
+            ]);
+        }
+
         DB::transaction(function () use ($combinedInvoice, $data, $allowedIds, $request) {
             $combinedInvoice->update(['due_date' => $data['use_due_date'] ? $data['due_date'] : null]);
             $combinedInvoice->invoices()->sync($allowedIds);
@@ -230,6 +252,27 @@ class CombinedInvoiceController extends Controller
                 $data['shipping_cost'] ?? 0,
                 $request->user()->id,
             );
+            $this->documents->refreshStatus($combinedInvoice->fresh());
+            if ($data['commission_enabled']) {
+                $this->createCommission($combinedInvoice->fresh(), $data, $request->user()->id, $data['commission_payment_date']);
+            }
+            $payments = $combinedInvoice->payments()->whereKey(array_keys($data['payment_dates']))->get();
+            if ($payments->count() !== count($data['payment_dates'])) {
+                throw ValidationException::withMessages(['payment_dates' => 'Data pembayaran Faktur tidak valid.']);
+            }
+            foreach ($payments as $payment) {
+                if ($payment->payment_date->toDateString() === $data['payment_dates'][$payment->id]) {
+                    continue;
+                }
+                $this->payments->update($payment, [
+                    'payment_date' => $data['payment_dates'][$payment->id],
+                    'amount' => $payment->amount,
+                    'payment_method' => $payment->payment_method,
+                    'bank_name' => $payment->bank_name,
+                    'reference_number' => $payment->reference_number,
+                    'notes' => $payment->notes,
+                ], $request->user()->id);
+            }
         });
 
         return redirect()->route('combined-invoices.show', $combinedInvoice)->with('success', 'Faktur berhasil diperbarui.');
@@ -247,7 +290,6 @@ class CombinedInvoiceController extends Controller
     public function updateDueDate(Request $request, CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.create');
-        abort_if($combinedInvoice->status !== 'open', 422, 'Tanggal jatuh tempo Faktur yang sudah lunas tidak dapat diubah.');
         $data = $request->validate([
             'use_due_date' => ['required', 'boolean'],
             'due_date' => ['nullable', 'required_if:use_due_date,true', 'date'],
@@ -305,21 +347,7 @@ class CombinedInvoiceController extends Controller
             throw ValidationException::withMessages(['amount' => 'Pembayaran melebihi total sisa Faktur.']);
         }
 
-        $factureTotal = (float) $combinedInvoice->invoices()->sum('grand_total');
-        $marginTotal = (float) $combinedInvoice->invoices()->sum('gross_profit');
-        $commissionAmount = 0.0;
-        $commissionBaseAmount = 0.0;
-        if ($data['commission_enabled']) {
-            $commissionBaseAmount = $data['commission_base'] === 'margin' ? $marginTotal : $factureTotal;
-            if ($data['commission_type'] === 'percentage' && $commissionBaseAmount <= 0) {
-                throw ValidationException::withMessages(['commission_base' => 'Margin Faktur harus lebih dari nol untuk komisi persentase.']);
-            }
-            $commissionAmount = $data['commission_type'] === 'percentage'
-                ? round($commissionBaseAmount * (float) $data['commission_value'] / 100, 2)
-                : round((float) $data['commission_value'], 2);
-        }
-
-        DB::transaction(function () use ($invoices, $data, $request, $combinedInvoice, $factureTotal, $marginTotal, $commissionBaseAmount, $commissionAmount) {
+        DB::transaction(function () use ($invoices, $data, $request, $combinedInvoice) {
             $unallocated = (string) $data['amount'];
             foreach ($invoices as $invoice) {
                 if (bccomp($unallocated, '0', 2) <= 0) {
@@ -336,21 +364,8 @@ class CombinedInvoiceController extends Controller
                 $unallocated = bcsub($unallocated, $allocation, 2);
             }
 
-            if ($commissionAmount > 0) {
-                FactureCommission::create([
-                    'combined_invoice_document_id' => $combinedInvoice->id,
-                    'facture_payment_date' => $data['payment_date'],
-                    'commission_base' => $data['commission_base'],
-                    'commission_type' => $data['commission_type'],
-                    'commission_value' => $data['commission_value'],
-                    'base_amount' => $commissionBaseAmount,
-                    'facture_total' => $factureTotal,
-                    'margin_total' => $marginTotal,
-                    'commission_amount' => $commissionAmount,
-                    'status' => 'unpaid',
-                    'notes' => $data['commission_notes'] ?? null,
-                    'created_by' => $request->user()->id,
-                ]);
+            if ($data['commission_enabled']) {
+                $this->createCommission($combinedInvoice, $data, $request->user()->id, $data['payment_date']);
             }
         });
 
@@ -421,6 +436,9 @@ class CombinedInvoiceController extends Controller
 
     private function validateDocument(Request $request): array
     {
+        $request->mergeIfMissing(['commission_enabled' => false]);
+        $request->mergeIfMissing(['payment_dates' => []]);
+
         return $request->validate([
             'customer_id' => ['required', 'integer', 'exists:customers,id'],
             'invoice_ids' => ['required', 'array', 'min:1'],
@@ -429,12 +447,43 @@ class CombinedInvoiceController extends Controller
             'due_date' => ['nullable', 'required_if:use_due_date,true', 'date'],
             'courier_id' => [Rule::requiredIf((float) $request->input('shipping_cost', 0) > 0), 'nullable', 'integer', 'exists:couriers,id'],
             'shipping_cost' => ['nullable', 'numeric', 'min:0'],
+            'commission_enabled' => ['required', 'boolean'],
+            'commission_payment_date' => [Rule::requiredIf($request->boolean('commission_enabled')), 'nullable', 'date'],
+            'commission_base' => [Rule::requiredIf($request->boolean('commission_enabled')), 'nullable', 'in:facture_total,margin'],
+            'commission_type' => [Rule::requiredIf($request->boolean('commission_enabled')), 'nullable', 'in:nominal,percentage'],
+            'commission_value' => [Rule::requiredIf($request->boolean('commission_enabled')), 'nullable', 'numeric', 'gt:0', Rule::when($request->input('commission_type') === 'percentage', ['integer', 'max:100'])],
+            'commission_notes' => ['nullable', 'string', 'max:2000'],
+            'payment_dates' => ['array'],
+            'payment_dates.*' => ['required', 'date'],
         ]);
     }
 
-    private function ensureEditable(CombinedInvoiceDocument $document): void
+    private function createCommission(CombinedInvoiceDocument $document, array $data, int $userId, string $date): FactureCommission
     {
-        abort_if($document->status !== 'open' || $document->payments()->exists(), 422, 'Faktur yang sudah menerima pembayaran tidak dapat diedit atau dihapus.');
+        $factureTotal = (float) $document->invoices()->sum('grand_total');
+        $marginTotal = (float) $document->invoices()->sum('gross_profit');
+        $baseAmount = $data['commission_base'] === 'margin' ? $marginTotal : $factureTotal;
+        if ($data['commission_type'] === 'percentage' && $baseAmount <= 0) {
+            throw ValidationException::withMessages(['commission_base' => 'Dasar komisi harus lebih dari nol untuk komisi persentase.']);
+        }
+        $amount = $data['commission_type'] === 'percentage'
+            ? round($baseAmount * (float) $data['commission_value'] / 100, 2)
+            : round((float) $data['commission_value'], 2);
+
+        return FactureCommission::create([
+            'combined_invoice_document_id' => $document->id,
+            'facture_payment_date' => $date,
+            'commission_base' => $data['commission_base'],
+            'commission_type' => $data['commission_type'],
+            'commission_value' => $data['commission_value'],
+            'base_amount' => $baseAmount,
+            'facture_total' => $factureTotal,
+            'margin_total' => $marginTotal,
+            'commission_amount' => $amount,
+            'status' => 'unpaid',
+            'notes' => $data['commission_notes'] ?? null,
+            'created_by' => $userId,
+        ]);
     }
 
     private function deletionLockReason(CombinedInvoiceDocument $document): ?string

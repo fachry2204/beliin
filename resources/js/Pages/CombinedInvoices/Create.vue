@@ -6,18 +6,28 @@ import AppButton from "@/Components/UI/AppButton.vue";
 import AppInput from "@/Components/UI/AppInput.vue";
 import AppSelect from "@/Components/UI/AppSelect.vue";
 import CurrencyInput from "@/Components/UI/CurrencyInput.vue";
+import AppTextarea from "@/Components/UI/AppTextarea.vue";
+import { percentageText } from "@/utils/percentage";
 
-interface Invoice { id:number; invoice_number:string; invoice_date:string; grand_total:string; paid_amount:string; remaining_amount:string }
+interface Invoice { id:number; invoice_number:string; invoice_date:string; grand_total:string; paid_amount:string; remaining_amount:string; gross_profit?:string }
 interface Customer { id:number; customer_code:string; name:string; company_name?:string; phone?:string; invoices:Invoice[] }
 interface Courier { id:number;name:string;vehicle_type?:string;license_plate?:string;deleted_at?:string|null }
 interface DocumentData { id:number;facture_number:string;customer_id:number;invoice_ids:number[];due_date?:string|null;courier_id?:number|null;shipping_cost?:string|number }
-const props=defineProps<{customers:Customer[];couriers:Courier[];today:string;defaultDueDate:string;document?:DocumentData}>();
+interface FacturePayment {id:number;payment_number:string;payment_date:string;amount:string;invoice:{id:number;invoice_number:string}}
+const props=defineProps<{customers:Customer[];couriers:Courier[];today:string;defaultDueDate:string;document?:DocumentData;canRecordCommission?:boolean;commissionWarningPercentage?:number;canEditPaymentDates?:boolean;facturePayments?:FacturePayment[]} >();
 const editing=computed(()=>Boolean(props.document));
-const form=useForm({customer_id:String(props.document?.customer_id??""),invoice_ids:props.document?.invoice_ids??[] as number[],use_due_date:props.document?Boolean(props.document.due_date):true,due_date:props.document?.due_date??props.defaultDueDate,courier_id:String(props.document?.courier_id??""),shipping_cost:String(props.document?.shipping_cost??"0")});
+const form=useForm({customer_id:String(props.document?.customer_id??""),invoice_ids:props.document?.invoice_ids??[] as number[],use_due_date:props.document?Boolean(props.document.due_date):true,due_date:props.document?.due_date??props.defaultDueDate,courier_id:String(props.document?.courier_id??""),shipping_cost:String(props.document?.shipping_cost??"0"),commission_enabled:false,commission_payment_date:props.today,commission_base:"facture_total",commission_type:"nominal",commission_value:"",commission_notes:"",payment_dates:Object.fromEntries((props.canEditPaymentDates?props.facturePayments??[]:[]).map(payment=>[payment.id,payment.payment_date.slice(0,10)])) as Record<number,string>});
 const customer=computed(()=>props.customers.find(item=>item.id===Number(form.customer_id)));
 const invoices=computed(()=>customer.value?.invoices??[]);
 const selected=computed(()=>invoices.value.filter(invoice=>form.invoice_ids.includes(invoice.id)));
 const total=computed(()=>selected.value.reduce((sum,invoice)=>sum+Number(invoice.remaining_amount),0));
+const factureTotal=computed(()=>selected.value.reduce((sum,invoice)=>sum+Number(invoice.grand_total),0));
+const marginTotal=computed(()=>selected.value.reduce((sum,invoice)=>sum+Number(invoice.gross_profit||0),0));
+const commissionBaseAmount=computed(()=>form.commission_base==="margin"?marginTotal.value:factureTotal.value);
+const commissionAmount=computed(()=>form.commission_type==="percentage"?commissionBaseAmount.value*Number(form.commission_value||0)/100:Number(form.commission_value||0));
+const finalMargin=computed(()=>marginTotal.value-commissionAmount.value);
+const commissionWarningLimit=computed(()=>marginTotal.value*Number(props.commissionWarningPercentage||0)/100);
+const commissionWarning=computed(()=>form.commission_enabled&&marginTotal.value>0&&commissionAmount.value>commissionWarningLimit.value);
 watch(()=>form.customer_id,()=>form.invoice_ids=[]);
 watch(()=>form.use_due_date,value=>{if(value&&!form.due_date)form.due_date=props.defaultDueDate});
 const toggleAll=()=>{form.invoice_ids=form.invoice_ids.length===invoices.value.length?[]:invoices.value.map(invoice=>invoice.id)};
@@ -32,5 +42,14 @@ const date=(value:string)=>new Date(value).toLocaleDateString("id-ID");
 <section class="panel mt-5"><div class="flex items-center justify-between border-b p-5"><div><h2 class="font-bold">Pilih Invoice</h2><p class="text-sm text-slate-500">Hanya invoice belum lunas dan belum masuk Faktur lain.</p></div><button v-if="invoices.length" type="button" class="text-sm font-semibold text-sky-600" @click="toggleAll">{{form.invoice_ids.length===invoices.length?'Hapus Semua':'Pilih Semua'}}</button></div>
 <div v-if="!form.customer_id" class="p-12 text-center text-slate-500">Pilih pelanggan terlebih dahulu.</div><div v-else-if="!invoices.length" class="p-12 text-center text-slate-500">Tidak ada invoice yang dapat dipilih.</div><div v-else class="table-wrap"><table class="data-table min-w-[760px]"><thead><tr><th class="w-12"></th><th>Nomor Invoice</th><th>Tanggal</th><th>Grand Total</th><th>Terbayar</th><th>Sisa</th></tr></thead><tbody><tr v-for="invoice in invoices" :key="invoice.id" class="cursor-pointer" @click="form.invoice_ids.includes(invoice.id)?form.invoice_ids=form.invoice_ids.filter(id=>id!==invoice.id):form.invoice_ids.push(invoice.id)"><td><input v-model="form.invoice_ids" type="checkbox" :value="invoice.id" class="h-5 w-5 rounded border-slate-300 text-sky-600" @click.stop/></td><td class="font-semibold text-sky-700">{{invoice.invoice_number}}</td><td>{{date(invoice.invoice_date)}}</td><td>{{money(invoice.grand_total)}}</td><td class="text-emerald-600">{{money(invoice.paid_amount)}}</td><td class="font-bold text-red-600">{{money(invoice.remaining_amount)}}</td></tr></tbody></table></div>
 <div class="flex items-center justify-between border-t bg-slate-50 p-5"><span>{{selected.length}} invoice dipilih</span><strong class="text-xl text-sky-700">Total Sisa: {{money(total)}}</strong></div></section>
+<section v-if="editing&&canEditPaymentDates&&facturePayments?.length" class="panel mt-5"><div class="border-b p-5"><h2 class="font-bold">Tanggal Bayar Faktur</h2><p class="text-sm text-slate-500">Koreksi tanggal pada pembayaran yang sudah tercatat.</p></div><div class="grid gap-4 p-5 md:grid-cols-2"><label v-for="payment in facturePayments" :key="payment.id"><span class="label">{{payment.payment_number}} · {{payment.invoice.invoice_number}}</span><AppInput v-model="form.payment_dates[payment.id]" type="date" required/><small class="mt-1 block text-slate-500">{{money(payment.amount)}}</small></label></div></section>
+<section v-if="editing&&canRecordCommission" class="mt-5 grid gap-4 rounded-xl border border-amber-200 bg-amber-50 p-5 sm:grid-cols-2">
+<label class="flex cursor-pointer items-center gap-3 sm:col-span-2"><input v-model="form.commission_enabled" type="checkbox" class="h-5 w-5 rounded border-amber-300 text-amber-600"/><span><strong class="block text-amber-900">Catat Komisi Faktur</strong><small class="text-amber-700">Komisi disimpan sebagai belum dibayar dan belum masuk Kas Keluar.</small></span></label>
+<template v-if="form.commission_enabled"><label><span class="label">Tanggal Bayar Faktur *</span><AppInput v-model="form.commission_payment_date" type="date" required/></label><div></div><label><span class="label">Komisi Diambil Dari *</span><AppSelect v-model="form.commission_base"><option value="facture_total">Total Faktur</option><option value="margin">Total Margin</option></AppSelect></label><label><span class="label">Tipe Komisi *</span><AppSelect v-model="form.commission_type"><option value="nominal">Rupiah</option><option value="percentage">Persentase</option></AppSelect></label>
+<label><span class="label">{{form.commission_type==='percentage'?'Persentase Komisi (%)':'Nominal Komisi (Rp)'}} *</span><AppInput v-model="form.commission_value" type="number" :min="form.commission_type==='percentage'?1:0.01" :max="form.commission_type==='percentage'?100:undefined" :step="form.commission_type==='percentage'?1:0.01" required/></label>
+<div class="rounded-lg bg-white/70 p-3 text-sm"><div class="flex justify-between"><span>Dasar</span><strong>{{money(commissionBaseAmount)}}</strong></div><div class="mt-1 flex justify-between"><span>Jumlah Komisi</span><strong>{{money(commissionAmount)}}</strong></div><div class="mt-2 flex justify-between border-t border-amber-200 pt-2"><span>Hasil Akhir Margin</span><strong :class="finalMargin>=0?'text-emerald-700':'text-red-700'">{{money(finalMargin)}}</strong></div></div>
+<div v-if="commissionWarning" class="rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">Peringatan: jumlah komisi lebih besar dari {{percentageText(commissionWarningPercentage||0)}} total margin Faktur ({{money(commissionWarningLimit)}}).</div>
+<label class="sm:col-span-2"><span class="label">Keterangan Komisi</span><AppTextarea v-model="form.commission_notes"/></label></template>
+</section>
 <p v-if="Object.keys(form.errors).length" class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{{Object.values(form.errors)[0]}}</p></form>
 </AuthenticatedLayout></template>

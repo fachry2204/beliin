@@ -1964,7 +1964,7 @@ class InvoiceDomainTest extends TestCase
         $this->get(route('combined-invoices.show', $document))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('canEdit', false)
+                ->where('canEdit', true)
                 ->where('canDelete', true)
                 ->where('deletionLocked', true)
                 ->where('commissionWarningPercentage', 10));
@@ -1986,13 +1986,16 @@ class InvoiceDomainTest extends TestCase
         $this->get(route('combined-invoices.show', $document))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('canEditDueDate', false)
+                ->where('canEditDueDate', true)
                 ->where('totals.commission_total', '40000')
                 ->has('payments', 3));
         $this->put(route('combined-invoices.due-date.update', $document), [
             'use_due_date' => true,
             'due_date' => '2026-07-30',
-        ])->assertStatus(422);
+        ])->assertRedirect();
+        $this->assertSame('2026-07-30', $document->fresh()->due_date->toDateString());
+
+        $this->get(route('combined-invoices.edit', $document))->assertOk();
 
         $paymentToCorrect = $second->payments()->where('amount', 500000)->firstOrFail();
         $this->put(route('combined-invoices.payments.update', [$document, $paymentToCorrect]), [
@@ -2022,6 +2025,66 @@ class InvoiceDomainTest extends TestCase
             ->assertRedirect(route('facture-commissions.index'));
         $this->assertDatabaseMissing('facture_commissions', ['id' => $commission->id]);
         $this->assertSoftDeleted('cash_transactions', ['id' => $commissionCash->id]);
+    }
+
+    public function test_editing_facture_can_record_an_unpaid_commission(): void
+    {
+        $invoice = $this->makeInvoice();
+        $invoice->update(['status' => InvoiceStatus::Unpaid, 'issued_at' => now()]);
+        $document = app(CombinedInvoiceService::class)->create(
+            $this->customer,
+            [$invoice->id],
+            '2026-07-30',
+            $this->courier->id,
+            0,
+            $this->admin->id,
+        );
+        $payment = app(PaymentService::class)->record($invoice->fresh(), [
+            'payment_date' => '2026-07-20',
+            'amount' => 100000,
+            'payment_method' => 'transfer',
+        ], $this->admin->id);
+        app(PaymentService::class)->attachToCombinedInvoice($payment, $document, $this->admin->id);
+
+        $this->actingAs($this->admin)
+            ->get(route('combined-invoices.edit', $document))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canRecordCommission', true)
+                ->where('canEditPaymentDates', true)
+                ->where('facturePayments.0.id', $payment->id)
+                ->where('facturePayments.0.payment_date', '2026-07-20')
+                ->where('commissionWarningPercentage', 10)
+                ->where('customers.0.invoices.0.gross_profit', $invoice->gross_profit));
+
+        $this->put(route('combined-invoices.update', $document), [
+            'customer_id' => $this->customer->id,
+            'invoice_ids' => [$invoice->id],
+            'use_due_date' => true,
+            'due_date' => '2026-08-05',
+            'courier_id' => $this->courier->id,
+            'shipping_cost' => 0,
+            'commission_enabled' => true,
+            'commission_payment_date' => '2026-07-28',
+            'commission_base' => 'margin',
+            'commission_type' => 'percentage',
+            'commission_value' => 10,
+            'commission_notes' => 'Komisi saat koreksi Faktur',
+            'payment_dates' => [$payment->id => '2026-07-25'],
+        ])->assertRedirect(route('combined-invoices.show', $document));
+
+        $this->assertDatabaseHas('facture_commissions', [
+            'combined_invoice_document_id' => $document->id,
+            'facture_payment_date' => '2026-07-28',
+            'commission_base' => 'margin',
+            'commission_type' => 'percentage',
+            'commission_value' => 10,
+            'commission_amount' => 25000,
+            'status' => 'unpaid',
+            'notes' => 'Komisi saat koreksi Faktur',
+        ]);
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'payment_date' => '2026-07-25']);
+        $this->assertDatabaseHas('cash_transactions', ['payment_id' => $payment->id, 'transaction_date' => '2026-07-25']);
     }
 
     public function test_purchase_price_is_absent_from_issued_invoice_print(): void
