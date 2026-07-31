@@ -4,6 +4,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 const props = defineProps<{
     show: boolean;
     targetItemName?: string;
+    targetQuantity: string | number;
     canPastePurchase: boolean;
 }>();
 const emit = defineEmits<{
@@ -46,7 +47,7 @@ watch(
         if (!show) return;
         reset();
         await nextTick();
-        const width = calculatorWindow.value?.offsetWidth ?? 520;
+        const width = calculatorWindow.value?.offsetWidth ?? 350;
         const height = calculatorWindow.value?.offsetHeight ?? 650;
         position.value = {
             left: Math.max(12, (window.innerWidth - width) / 2),
@@ -56,7 +57,7 @@ watch(
 );
 
 const clampPosition = (left: number, top: number) => {
-    const width = calculatorWindow.value?.offsetWidth ?? 520;
+    const width = calculatorWindow.value?.offsetWidth ?? 350;
     const height = calculatorWindow.value?.offsetHeight ?? 650;
     return {
         left: Math.min(Math.max(0, left), Math.max(0, window.innerWidth - width)),
@@ -202,26 +203,26 @@ const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0"];
             <section
                 ref="calculatorWindow"
                 aria-label="Calculator"
-                class="pointer-events-auto absolute w-[min(520px,calc(100vw-24px))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+                class="pointer-events-auto absolute w-[min(350px,calc(100vw-16px))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
                 :style="{ left: `${position.left}px`, top: `${position.top}px` }"
             >
                 <header
-                    class="flex touch-none select-none items-center justify-between border-b border-slate-200 px-5 py-3.5"
+                    class="flex touch-none select-none items-center justify-between border-b border-slate-200 px-3 py-2"
                     :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
                     title="Geser Calculator"
                     @pointerdown="startDragging"
                 >
                     <div class="flex items-center gap-2">
-                        <svg aria-hidden="true" class="h-5 w-5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <svg aria-hidden="true" class="h-4 w-4 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <rect x="4" y="2.5" width="16" height="19" rx="2" />
                             <path d="M7.5 6.5h9M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01" stroke-linecap="round" />
                         </svg>
-                        <h2 class="text-lg font-bold text-slate-900">Calculator</h2>
+                        <h2 class="text-sm font-bold text-slate-900">Calculator</h2>
                     </div>
                     <button
                         type="button"
                         aria-label="Tutup Calculator"
-                        class="cursor-pointer rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                        class="cursor-pointer rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
                         @pointerdown.stop
                         @click="emit('close')"
                     >
@@ -229,15 +230,15 @@ const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0"];
                     </button>
                 </header>
 
-                <div class="p-4">
-            <div class="mb-3 rounded-xl bg-slate-900 px-4 py-5 text-right text-white">
-                <div class="h-5 text-xs text-slate-400">{{ pendingOperator ?? "" }}</div>
-                <output aria-live="polite" class="block min-h-10 break-all text-3xl font-bold tracking-tight">
+                <div class="p-2.5">
+            <div class="mb-2 rounded-lg bg-slate-900 px-3 py-2 text-right text-white">
+                <div class="h-3 text-[10px] text-slate-400">{{ pendingOperator ?? "" }}</div>
+                <output aria-live="polite" class="block min-h-7 break-all text-xl font-bold tracking-tight">
                     {{ formattedEntry }}
                 </output>
             </div>
 
-            <div class="grid grid-cols-4 gap-2" aria-label="Tombol calculator">
+            <div class="grid grid-cols-4 gap-1" aria-label="Tombol calculator">
                 <button type="button" class="calculator-key text-red-600" @click="reset">AC</button>
                 <button type="button" class="calculator-key" @click="toggleSign">+/−</button>
                 <button type="button" class="calculator-key" @click="percent">%</button>
@@ -261,28 +262,29 @@ const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0"];
                 <button type="button" class="calculator-key bg-sky-500 text-white hover:bg-sky-600" @click="equals">=</button>
             </div>
 
-            <p class="mt-3 text-xs text-slate-500">
+            <p class="mt-2 text-[10px] text-slate-500">
                 Target barang:
                 <strong class="text-slate-700">{{ targetItemName || "Baris pertama" }}</strong>
+                <span class="ml-1">(QTY: {{ targetQuantity }})</span>
             </p>
-            <div class="mt-2 grid grid-cols-2 gap-2">
+            <div class="mt-1 grid grid-cols-2 gap-1">
                 <button
                     type="button"
                     data-testid="paste-purchase-price"
-                    class="rounded-lg border border-amber-300 px-3 py-2.5 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    class="rounded-lg border border-amber-300 px-1.5 py-1.5 text-[11px] font-semibold leading-tight text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="pasteableValue === null || !canPastePurchase"
                     @click="pasteResult('purchase')"
                 >
-                    {{ pastedTarget === "purchase" ? "Harga Modal Terisi" : "Paste ke Harga Modal" }}
+                    {{ pastedTarget === "purchase" ? "Total Modal Terisi" : "Paste Total Modal" }}
                 </button>
                 <button
                     type="button"
                     data-testid="paste-selling-price"
-                    class="rounded-lg border border-emerald-300 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    class="rounded-lg border border-emerald-300 px-1.5 py-1.5 text-[11px] font-semibold leading-tight text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="pasteableValue === null"
                     @click="pasteResult('selling')"
                 >
-                    {{ pastedTarget === "selling" ? "Harga Jual Terisi" : "Paste ke Harga Jual" }}
+                    {{ pastedTarget === "selling" ? "Total Jual Terisi" : "Paste Total Jual" }}
                 </button>
             </div>
                 </div>
@@ -293,7 +295,7 @@ const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0"];
 
 <style scoped>
 .calculator-key {
-    @apply min-h-12 rounded-lg border border-slate-200 bg-slate-50 text-lg font-semibold text-slate-800 transition hover:bg-slate-100 active:scale-95;
+    @apply min-h-9 rounded-lg border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 transition hover:bg-slate-100 active:scale-95;
 }
 .calculator-operator {
     @apply border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100;

@@ -13,11 +13,25 @@ class InvoiceCalculationService
         $items = [];
         foreach ($data['items'] as $item) {
             $factor = (string) $item['quantity'];
-            $line = bcmul((string) $item['selling_price'], $factor, 2);
-            $cost = bcmul((string) $item['purchase_price'], $factor, 2);
+            $hasSellingTotal = array_key_exists('selling_total', $item) && $item['selling_total'] !== '' && $item['selling_total'] !== null;
+            $hasPurchaseTotal = array_key_exists('purchase_total', $item) && $item['purchase_total'] !== '' && $item['purchase_total'] !== null;
+            $line = $hasSellingTotal
+                ? bcadd((string) $item['selling_total'], '0', 2)
+                : bcmul((string) $item['selling_price'], $factor, 2);
+            $cost = $hasPurchaseTotal
+                ? bcadd((string) $item['purchase_total'], '0', 2)
+                : bcmul((string) $item['purchase_price'], $factor, 2);
+            $sellingPrice = $hasSellingTotal ? bcdiv($line, $factor, 2) : (string) $item['selling_price'];
+            $purchasePrice = $hasPurchaseTotal ? bcdiv($cost, $factor, 2) : (string) $item['purchase_price'];
             $subtotal = bcadd($subtotal, $line, 2);
             $totalCost = bcadd($totalCost, $cost, 2);
-            $items[] = array_merge($item, ['line_subtotal' => $line, 'cost_total' => $cost, 'profit' => bcsub($line, $cost, 2)]);
+            $items[] = array_merge($item, [
+                'purchase_price' => $purchasePrice,
+                'selling_price' => $sellingPrice,
+                'line_subtotal' => $line,
+                'cost_total' => $cost,
+                'profit' => bcsub($line, $cost, 2),
+            ]);
         }
         $discountType = $data['discount_type'] ?? 'nominal';
         $discountValue = (string) ($data['discount_value'] ?? 0);

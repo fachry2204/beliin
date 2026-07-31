@@ -16,15 +16,16 @@ class DashboardController extends Controller
         }
 
         $this->authorize('dashboard.view');
-        $data = Cache::remember('dashboard.metrics.v3', 60, function () {
+        $data = Cache::remember('dashboard.metrics.v4', 60, function () {
             $monthly = Invoice::whereMonth('invoice_date', now()->month)->whereYear('invoice_date', now()->year);
-            $chartStart = now()->startOfMonth()->subMonths(11);
+            $chartEnd = now()->startOfMonth();
+            $chartStart = $chartEnd->copy()->subMonths(11);
             $chartInvoices = Invoice::query()
                 ->whereBetween('invoice_date', [$chartStart->toDateString(), now()->endOfDay()])
                 ->whereNotIn('status', [InvoiceStatus::Draft, InvoiceStatus::Cancelled])
                 ->get(['invoice_date', 'grand_total']);
-            $chart = collect(range(11, 0))->map(function ($offset) {
-                $month = now()->subMonths($offset);
+            $chart = collect(range(11, 0))->map(function ($offset) use ($chartEnd) {
+                $month = $chartEnd->copy()->subMonths($offset);
 
                 return ['period' => $month->translatedFormat('M y'), 'key' => $month->format('Y-m')];
             })->map(fn (array $point) => [

@@ -41,6 +41,8 @@ interface DraftInvoice {
         product_name_snapshot?: string;
         sku_snapshot?: string;
         unit_snapshot?: string;
+        line_subtotal?: string;
+        cost_total?: string;
     })[];
 }
 const props = defineProps<{
@@ -86,6 +88,8 @@ const fresh = (): InvoiceItem => ({
     unit: "Pcs",
     purchase_price: "0",
     selling_price: "0",
+    purchase_total: "0",
+    selling_total: "0",
     quantity: "1",
 });
 const normalizeQuantity = (value: string | number) => {
@@ -138,6 +142,14 @@ const form = useForm<{
         unit: item.unit_snapshot ?? item.unit ?? "Pcs",
         purchase_price: String(item.purchase_price ?? 0),
         selling_price: String(item.selling_price),
+        purchase_total: String(
+            item.cost_total ??
+                Number(item.purchase_price ?? 0) * Number(item.quantity ?? 0),
+        ),
+        selling_total: String(
+            item.line_subtotal ??
+                Number(item.selling_price ?? 0) * Number(item.quantity ?? 0),
+        ),
         quantity: normalizeQuantity(item.quantity),
     })) ?? [fresh()],
 });
@@ -156,8 +168,7 @@ watch(
 const selectedCustomer = computed(() =>
     props.customers.find((c) => c.id === Number(form.customer_id)),
 );
-const line = (i: InvoiceItem) =>
-    Number(i.selling_price || 0) * Number(i.quantity || 0);
+const line = (i: InvoiceItem) => Number(i.selling_total || 0);
 const subtotal = computed(() => form.items.reduce((s, i) => s + line(i), 0));
 const discount = computed(() =>
     props.discountEnabled
@@ -188,10 +199,10 @@ const lossItems = computed(() =>
             name: item.product_name || "Barang tanpa nama",
             loss:
                 Math.max(
-                    Number(item.purchase_price || 0) -
-                        Number(item.selling_price || 0),
+                    Number(item.purchase_total || 0) -
+                        Number(item.selling_total || 0),
                     0,
-                ) * Number(item.quantity || 0),
+                ),
         }))
         .filter((item) => item.loss > 0),
 );
@@ -213,12 +224,17 @@ const focusCalculatorItem = (index: number) => {
     calculatorItemIndex.value = index;
 };
 const pasteCalculatorPrice = (
-    field: "purchase_price" | "selling_price",
+    field: "purchase_total" | "selling_total",
     value: string,
 ) => {
     const item = calculatorItem.value;
-    if (!item || (field === "purchase_price" && !props.canViewCost)) return;
+    if (!item || (field === "purchase_total" && !props.canViewCost)) return;
     item[field] = value;
+    const quantity = Number(item.quantity || 0);
+    if (quantity > 0) {
+        const unitField = field === "purchase_total" ? "purchase_price" : "selling_price";
+        item[unitField] = String(Math.round((Number(value) / quantity) * 100) / 100);
+    }
 };
 const generatePoNumber = () => {
     const datePart = (form.invoice_date || today).replaceAll("-", "");
@@ -485,10 +501,11 @@ watch(
         <InvoiceCalculator
             :show="calculatorOpen"
             :target-item-name="calculatorItem?.product_name"
+            :target-quantity="calculatorItem?.quantity ?? 0"
             :can-paste-purchase="canViewCost"
             @close="calculatorOpen = false"
-            @paste-purchase="pasteCalculatorPrice('purchase_price', $event)"
-            @paste-selling="pasteCalculatorPrice('selling_price', $event)"
+            @paste-purchase="pasteCalculatorPrice('purchase_total', $event)"
+            @paste-selling="pasteCalculatorPrice('selling_total', $event)"
         />
     </AuthenticatedLayout
     >

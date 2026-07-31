@@ -17,6 +17,7 @@ class InvoiceRequest extends FormRequest
 
                 return array_merge($item, [
                     'purchase_price' => $this->user()->can('profit.view') ? ($item['purchase_price'] ?? null) : null,
+                    'purchase_total' => $this->user()->can('profit.view') ? ($item['purchase_total'] ?? null) : null,
                     'volume' => 1,
                     'calculation_method' => 'qty',
                 ]);
@@ -43,7 +44,7 @@ class InvoiceRequest extends FormRequest
             'discount_type' => 'required|in:percentage,nominal',
             'discount_value' => ['required', 'numeric', 'min:0', Rule::when($this->input('discount_type') === 'percentage', ['integer', 'max:100'])],
             'tax_percentage' => 'required|integer|min:0|max:100',
-            'shipping_cost' => 'nullable|numeric|min:0', 'notes' => 'nullable|max:3000', 'terms' => 'nullable|max:3000', 'items' => 'required|array|min:1', 'items.*.product_id' => 'nullable|exists:products,id', 'items.*.product_name' => 'required|string|max:255', 'items.*.sku' => 'nullable|string|max:100', 'items.*.unit' => 'required|string|max:30', 'items.*.purchase_price' => 'nullable|numeric|min:0', 'items.*.selling_price' => 'required|numeric|min:0', 'items.*.quantity' => 'required|numeric|gt:0', 'items.*.volume' => 'required|numeric|in:1', 'items.*.calculation_method' => 'required|in:qty',
+            'shipping_cost' => 'nullable|numeric|min:0', 'notes' => 'nullable|max:3000', 'terms' => 'nullable|max:3000', 'items' => 'required|array|min:1', 'items.*.product_id' => 'nullable|exists:products,id', 'items.*.product_name' => 'required|string|max:255', 'items.*.sku' => 'nullable|string|max:100', 'items.*.unit' => 'required|string|max:30', 'items.*.purchase_price' => 'nullable|numeric|min:0', 'items.*.selling_price' => 'required|numeric|min:0', 'items.*.purchase_total' => 'nullable|numeric|min:0', 'items.*.selling_total' => 'nullable|numeric|min:0', 'items.*.quantity' => 'required|numeric|gt:0', 'items.*.volume' => 'required|numeric|in:1', 'items.*.calculation_method' => 'required|in:qty',
         ];
     }
 
@@ -55,6 +56,10 @@ class InvoiceRequest extends FormRequest
             'items.*.selling_price.required' => 'Harga jual wajib diisi.',
             'items.*.selling_price.numeric' => 'Harga jual harus berupa angka.',
             'items.*.selling_price.min' => 'Harga jual tidak boleh kurang dari 0.',
+            'items.*.purchase_total.numeric' => 'Total modal harus berupa angka.',
+            'items.*.purchase_total.min' => 'Total modal tidak boleh kurang dari 0.',
+            'items.*.selling_total.numeric' => 'Total jual harus berupa angka.',
+            'items.*.selling_total.min' => 'Total jual tidak boleh kurang dari 0.',
             'items.*.quantity.gt' => 'Jumlah barang harus lebih besar dari 0.',
         ];
     }

@@ -33,6 +33,8 @@ export interface InvoiceItem {
     unit: string;
     purchase_price: string;
     selling_price: string;
+    purchase_total: string;
+    selling_total: string;
     quantity: string;
 }
 const props = defineProps<{
@@ -135,6 +137,8 @@ const updateProductName = (item: InvoiceItem, index: number, value: string) => {
         item.unit = "Pcs";
         item.purchase_price = "0";
         item.selling_price = "0";
+        item.purchase_total = "0";
+        item.selling_total = "0";
     }
     openSearch(index);
 };
@@ -145,6 +149,9 @@ const selectProduct = (item: InvoiceItem, selected: SearchProductOption) => {
     item.unit = selected.unit;
     item.purchase_price = selected.purchase_price;
     item.selling_price = selected.selling_price;
+    const quantity = Number(item.quantity || 0);
+    item.purchase_total = String(Math.round(Number(selected.purchase_price || 0) * quantity));
+    item.selling_total = String(Math.round(Number(selected.selling_price || 0) * quantity));
     openIndex.value = null;
 };
 const handleNameKeydown = (
@@ -170,10 +177,26 @@ const handleNameKeydown = (
         openIndex.value = null;
     }
 };
-const total = (item: InvoiceItem) =>
-    Number(item.selling_price || 0) * Number(item.quantity || 0);
+const roundedPrice = (value: number) =>
+    Number.isFinite(value) ? String(Math.round(value * 100) / 100) : "0";
+const syncUnitPrices = (item: InvoiceItem) => {
+    const quantity = Number(item.quantity || 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+    item.purchase_price = roundedPrice(Number(item.purchase_total || 0) / quantity);
+    item.selling_price = roundedPrice(Number(item.selling_total || 0) / quantity);
+};
+const basePurchasePrice = (item: InvoiceItem) =>
+    Number(item.quantity || 0) > 0
+        ? Number(item.purchase_total || 0) / Number(item.quantity)
+        : 0;
+const baseSellingPrice = (item: InvoiceItem) =>
+    Number(item.quantity || 0) > 0
+        ? Number(item.selling_total || 0) / Number(item.quantity)
+        : 0;
+const itemMargin = (item: InvoiceItem) =>
+    Number(item.selling_total || 0) - Number(item.purchase_total || 0);
 const sellingPriceIsInvalid = (item: InvoiceItem) =>
-    Number(item.selling_price || 0) < Number(item.purchase_price || 0);
+    Number(item.selling_total || 0) < Number(item.purchase_total || 0);
 const touchSellingPrice = (index: number) => {
     touchedSellingPrices.value = new Set(touchedSellingPrices.value).add(index);
 };
@@ -185,16 +208,22 @@ const money = (v: number | string) =>
     }).format(Number(v));
 </script>
 <template>
+    <div class="mx-4 mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+        <strong>Cara input:</strong> isi Total Modal dan Total Jual untuk seluruh QTY.
+        Harga Dasar otomatis dihitung dari Total ÷ QTY, sedangkan Margin Item = Total Jual − Total Modal.
+    </div>
     <div class="table-wrap">
-        <table class="data-table min-w-[900px]">
+        <table class="data-table min-w-[1320px]">
             <thead>
                 <tr>
                     <th>Nama Barang</th>
-                    <th v-if="canViewCost">Harga Beli</th>
-                    <th>Harga Jual</th>
+                    <th v-if="canViewCost">Total Modal</th>
+                    <th>Total Jual</th>
                     <th>Qty</th>
+                    <th v-if="canViewCost">Harga Dasar Modal</th>
+                    <th>Harga Dasar Jual</th>
+                    <th v-if="canViewCost">Margin Item</th>
                     <th>Satuan</th>
-                    <th class="text-right">Total</th>
                     <th></th>
                 </tr>
             </thead>
@@ -269,23 +298,24 @@ const money = (v: number | string) =>
                     </td>
                     <td v-if="canViewCost">
                         <CurrencyInput
-                            v-model="item.purchase_price"
-                            :data-testid="`purchase-price-${index}`"
+                            v-model="item.purchase_total"
+                            :data-testid="`purchase-total-${index}`"
                             required
+                            @update:model-value="syncUnitPrices(item)"
                         />
                     </td>
                     <td class="align-top">
                         <CurrencyInput
-                            v-model="item.selling_price"
-                            :data-testid="`selling-price-${index}`"
+                            v-model="item.selling_total"
+                            :data-testid="`selling-total-${index}`"
                             required
-                            @update:model-value="touchSellingPrice(index)"
+                            @update:model-value="syncUnitPrices(item); touchSellingPrice(index)"
                         />
                         <p
                             v-if="touchedSellingPrices.has(index) && sellingPriceIsInvalid(item)"
                             class="mt-1 text-xs font-medium text-amber-600"
                         >
-                            Harga jual di bawah harga beli. Konfirmasi diperlukan saat menyimpan.
+                            Total jual di bawah total modal. Konfirmasi diperlukan saat menyimpan.
                         </p>
                     </td>
                     <td>
@@ -295,7 +325,21 @@ const money = (v: number | string) =>
                             min="0.0001"
                             step="0.0001"
                             required
+                            @update:model-value="syncUnitPrices(item)"
                         />
+                    </td>
+                    <td v-if="canViewCost" class="font-medium text-amber-700">
+                        {{ money(basePurchasePrice(item)) }}
+                    </td>
+                    <td class="font-medium text-sky-700">
+                        {{ money(baseSellingPrice(item)) }}
+                    </td>
+                    <td
+                        v-if="canViewCost"
+                        class="font-semibold"
+                        :class="itemMargin(item) < 0 ? 'text-red-700' : 'text-emerald-700'"
+                    >
+                        {{ money(itemMargin(item)) }}
                     </td>
                     <td>
                         <AppSelect
@@ -311,9 +355,6 @@ const money = (v: number | string) =>
                                 {{ unit }}
                             </option>
                         </AppSelect>
-                    </td>
-                    <td class="text-right font-semibold">
-                        {{ money(total(item)) }}
                     </td>
                     <td>
                         <button

@@ -22,6 +22,7 @@ interface Item {
     quantity: string;
     line_subtotal: string;
     cost_total?: string;
+    profit?: string;
 }
 interface Payment {
     id: number;
@@ -62,6 +63,8 @@ interface Invoice {
     courier_id?: number;
     shipping_cost: string;
     subtotal: string;
+    total_cost?: string;
+    gross_profit?: string;
     discount_amount: string;
     tax_percentage: string;
     tax_amount: string;
@@ -118,6 +121,12 @@ const quantityText = (value: string | number) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? String(numeric) : String(value ?? "");
 };
+const grossMargin = computed(() => Number(props.invoice.gross_profit ?? 0));
+const netMargin = computed(
+    () => grossMargin.value - Number(props.invoice.shipping_cost ?? 0),
+);
+const marginTextClass = (value: number) =>
+    value < 0 ? "text-red-700" : "text-emerald-700";
 const deliverySteps = [
     {
         key: "pending",
@@ -372,11 +381,13 @@ const remove = () => {
                             <thead>
                                 <tr>
                                     <th>Barang</th>
-                                    <th v-if="canViewCost">Harga Beli</th>
-                                    <th>Harga Jual</th>
+                                    <th v-if="canViewCost">Harga Dasar Modal</th>
+                                    <th>Harga Dasar Jual</th>
                                     <th>Qty</th>
                                     <th>Satuan</th>
-                                    <th>Total</th>
+                                    <th v-if="canViewCost">Total Modal</th>
+                                    <th>Total Jual</th>
+                                    <th v-if="canViewCost">Margin Item</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -396,13 +407,77 @@ const remove = () => {
                                     <td>{{ money(item.selling_price) }}</td>
                                     <td>{{ quantityText(item.quantity) }}</td>
                                     <td>{{ item.unit_snapshot }}</td>
+                                    <td v-if="canViewCost" class="font-semibold text-amber-700">
+                                        {{ money(item.cost_total ?? 0) }}
+                                    </td>
                                     <td class="font-semibold">
                                         {{ money(item.line_subtotal) }}
+                                    </td>
+                                    <td
+                                        v-if="canViewCost"
+                                        class="font-semibold"
+                                        :class="marginTextClass(Number(item.profit ?? 0))"
+                                    >
+                                        {{ money(item.profit ?? 0) }}
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
+                </section>
+                <section v-if="canViewCost" class="panel p-5">
+                    <h2 class="mb-4 font-bold">Ringkasan Harga dan Margin</h2>
+                    <dl class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <div class="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                            <dt class="text-xs font-semibold text-sky-700">
+                                Total Harga Jual
+                            </dt>
+                            <dd class="mt-2 text-lg font-bold text-slate-900">
+                                {{ money(invoice.subtotal) }}
+                            </dd>
+                        </div>
+                        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <dt class="text-xs font-semibold text-amber-700">
+                                Total Harga Beli
+                            </dt>
+                            <dd class="mt-2 text-lg font-bold text-slate-900">
+                                {{ money(invoice.total_cost ?? 0) }}
+                            </dd>
+                        </div>
+                        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                            <dt class="text-xs font-semibold text-emerald-700">
+                                Margin Kotor
+                            </dt>
+                            <dd
+                                class="mt-2 text-lg font-bold"
+                                :class="marginTextClass(grossMargin)"
+                            >
+                                {{ money(grossMargin) }}
+                            </dd>
+                        </div>
+                        <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+                            <dt class="text-xs font-semibold text-red-700">
+                                Dikurangi Ongkir
+                            </dt>
+                            <dd class="mt-2 text-lg font-bold text-red-700">
+                                - {{ money(invoice.shipping_cost) }}
+                            </dd>
+                        </div>
+                        <div class="rounded-xl border-2 border-slate-300 bg-slate-50 p-4">
+                            <dt class="text-xs font-semibold text-slate-700">
+                                Margin Bersih
+                            </dt>
+                            <dd
+                                class="mt-2 text-lg font-bold"
+                                :class="marginTextClass(netMargin)"
+                            >
+                                {{ money(netMargin) }}
+                            </dd>
+                        </div>
+                    </dl>
+                    <p class="mt-3 text-xs text-slate-500">
+                        Margin Bersih = Margin Kotor − Ongkir
+                    </p>
                 </section>
                 <section v-if="invoice.payments.length" class="panel">
                     <div class="border-b px-5 py-4 font-bold">

@@ -559,7 +559,7 @@ class InvoiceDomainTest extends TestCase
     {
         $invoice = $this->makeInvoice();
         $this->customer->delete();
-        Cache::forget('dashboard.metrics.v3');
+        Cache::forget('dashboard.metrics.v4');
 
         $this->actingAs($this->admin)->get(route('dashboard'))->assertOk()->assertInertia(
             fn (Assert $page) => $page
@@ -568,6 +568,30 @@ class InvoiceDomainTest extends TestCase
                 ->where('recent.0.customer.name', 'Budi')
                 ->where('recent.0.customer.company_name', 'PT Maju')
         );
+    }
+
+    public function test_dashboard_chart_has_twelve_unique_months_at_month_end(): void
+    {
+        Carbon::setTestNow('2026-07-31 12:00:00');
+        Cache::forget('dashboard.metrics.v4');
+
+        try {
+            $this->actingAs($this->admin)->get(route('dashboard'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Dashboard')
+                    ->has('chart', 12)
+                    ->where('chart', function ($chart) {
+                        $periods = collect($chart)->pluck('period');
+
+                        return $periods->unique()->count() === 12
+                            && $periods->first() === 'Agt 25'
+                            && $periods->last() === 'Jul 26';
+                    }));
+        } finally {
+            Carbon::setTestNow();
+            Cache::forget('dashboard.metrics.v4');
+        }
     }
 
     public function test_admin_can_delete_a_cancelled_invoice_with_legacy_payment_data(): void
@@ -1159,6 +1183,61 @@ class InvoiceDomainTest extends TestCase
         $this->assertSame('40.00', $result['total_cost']);
     }
 
+    public function test_invoice_accepts_item_totals_and_calculates_base_prices_and_margin(): void
+    {
+        $result = app(InvoiceCalculationService::class)->calculate([
+            'discount_type' => 'nominal',
+            'discount_value' => 0,
+            'tax_percentage' => 0,
+            'items' => [[
+                'purchase_price' => 0,
+                'selling_price' => 0,
+                'purchase_total' => 300000,
+                'selling_total' => 360000,
+                'quantity' => 6,
+            ]],
+        ]);
+
+        $this->assertSame('300000.00', $result['total_cost']);
+        $this->assertSame('360000.00', $result['subtotal']);
+        $this->assertSame('50000.00', $result['items'][0]['purchase_price']);
+        $this->assertSame('60000.00', $result['items'][0]['selling_price']);
+        $this->assertSame('60000.00', $result['items'][0]['profit']);
+    }
+
+    public function test_invoice_store_preserves_entered_item_totals(): void
+    {
+        $this->actingAs($this->admin)->post(route('invoices.store'), [
+            'customer_id' => $this->customer->id,
+            'invoice_date' => '2026-07-15',
+            'due_date' => '2026-07-22',
+            'discount_type' => 'nominal',
+            'discount_value' => 0,
+            'tax_percentage' => 0,
+            'items' => [[
+                'product_id' => $this->product->id,
+                'product_name' => 'Cabai',
+                'unit' => 'Kg',
+                'purchase_price' => 0,
+                'selling_price' => 0,
+                'purchase_total' => 300000,
+                'selling_total' => 360000,
+                'quantity' => 6,
+            ]],
+        ])->assertRedirect();
+
+        $invoice = Invoice::query()->latest('id')->firstOrFail();
+        $item = $invoice->items()->firstOrFail();
+
+        $this->assertSame('300000.00', $invoice->total_cost);
+        $this->assertSame('360000.00', $invoice->subtotal);
+        $this->assertSame(50000, $item->purchase_price);
+        $this->assertSame(60000, $item->selling_price);
+        $this->assertSame(300000, $item->cost_total);
+        $this->assertSame(360000, $item->line_subtotal);
+        $this->assertSame(60000, $item->profit);
+    }
+
     public function test_invoice_numbers_are_unique_sequential_and_never_count_based(): void
     {
         $numbers = app(InvoiceNumberService::class);
@@ -1362,7 +1441,10 @@ class InvoiceDomainTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('canEditInvoice', true)
-                ->where('canDeleteInvoice', true));
+                ->where('canDeleteInvoice', true)
+                ->where('canViewCost', true)
+                ->where('invoice.total_cost', '800000.00')
+                ->where('invoice.gross_profit', '300000.00'));
         $this->get(route('invoices.edit', $updated))->assertOk();
 
         $data['items'][0]['selling_price'] = 30000;
@@ -1591,7 +1673,10 @@ class InvoiceDomainTest extends TestCase
             'shipping_cost' => 50000,
         ])->assertRedirect();
         $document = CombinedInvoiceDocument::firstOrFail();
-        $this->assertMatchesRegularExpression('#^FKT/2026/07/\d{5}$#', $document->facture_number);
+        $this->assertMatchesRegularExpression(
+            '#^FKT/'.preg_quote(now()->format('Y/m'), '#').'/\d{5}$#',
+            $document->facture_number,
+        );
         $this->assertSame($factureDueDate, $document->due_date->toDateString());
         $this->assertSame($this->courier->id, $document->courier_id);
         $this->assertSame('50000.00', $document->shipping_cost);
@@ -1745,7 +1830,10 @@ class InvoiceDomainTest extends TestCase
             'due_date' => null,
         ])->assertRedirect();
         $document = CombinedInvoiceDocument::where('customer_id', $this->customer->id)->where('status', 'open')->firstOrFail();
-        $this->assertMatchesRegularExpression('#^FKT/2026/07/\d{5}$#', $document->facture_number);
+        $this->assertMatchesRegularExpression(
+            '#^FKT/'.preg_quote(now()->format('Y/m'), '#').'/\d{5}$#',
+            $document->facture_number,
+        );
         $this->assertNull($document->due_date);
 
         $this->post(route('combined-invoices.pay', $document), [
