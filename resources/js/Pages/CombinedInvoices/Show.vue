@@ -81,6 +81,7 @@ const props = defineProps<{
 }>();
 const paymentOpen = ref(false);
 const dueDateOpen = ref(false);
+const editFacturePaymentDateOpen = ref(false);
 const editPaymentOpen = ref(false);
 const editingPayment = ref<PaymentRecord | null>(null);
 const actionWarning = ref("");
@@ -102,6 +103,28 @@ const dueDateForm = useForm({
     use_due_date: Boolean(props.document.due_date),
     due_date: props.document.due_date?.slice(0, 10) || props.defaultDueDate,
 });
+const paymentDateOptions = computed(() =>
+    [...new Set(props.payments.map((row) => row.payment_date.slice(0, 10)))].sort().reverse(),
+);
+const facturePaymentDateForm = useForm({
+    original_payment_date: paymentDateOptions.value[0] || "",
+    payment_date: paymentDateOptions.value[0] || "",
+});
+const openFacturePaymentDateEditor = () => {
+    const latestDate = paymentDateOptions.value[0] || "";
+    facturePaymentDateForm.original_payment_date = latestDate;
+    facturePaymentDateForm.payment_date = latestDate;
+    facturePaymentDateForm.clearErrors();
+    editFacturePaymentDateOpen.value = true;
+};
+const chooseOriginalPaymentDate = () => {
+    facturePaymentDateForm.payment_date = facturePaymentDateForm.original_payment_date;
+};
+const submitFacturePaymentDate = () =>
+    facturePaymentDateForm.put(
+        route("combined-invoices.payment-date.update", props.document.id),
+        { onSuccess: () => (editFacturePaymentDateOpen.value = false) },
+    );
 const submitPayment = () =>
     payment.post(route("combined-invoices.pay", props.document.id), {
         forceFormData: true,
@@ -233,6 +256,11 @@ const commissionWarning = computed(
                     ><AppButton variant="secondary"
                         >Edit Faktur</AppButton
                     ></Link
+                ><AppButton
+                    v-if="canManagePayments && paymentDateOptions.length"
+                    variant="secondary"
+                    @click="openFacturePaymentDateEditor"
+                    >Edit Tanggal Bayar</AppButton
                 ><AppButton
                     v-if="
                         canManagePayments && Number(totals.remaining_total) > 0
@@ -459,6 +487,56 @@ const commissionWarning = computed(
                 </table>
             </div>
         </section>
+
+        <AppModal
+            :show="editFacturePaymentDateOpen"
+            title="Edit Tanggal Bayar Faktur"
+            @close="editFacturePaymentDateOpen = false"
+        >
+            <form class="space-y-4" @submit.prevent="submitFacturePaymentDate">
+                <div class="rounded-xl bg-sky-50 p-4 text-sm text-slate-700">
+                    Semua alokasi invoice dan Cash Masuk pada tanggal pembayaran yang dipilih akan diperbarui bersamaan.
+                </div>
+                <label class="block">
+                    <span class="label">Tanggal Bayar yang Akan Diedit *</span>
+                    <AppSelect
+                        v-model="facturePaymentDateForm.original_payment_date"
+                        required
+                        @update:model-value="chooseOriginalPaymentDate"
+                    >
+                        <option v-for="value in paymentDateOptions" :key="value" :value="value">
+                            {{ date(value) }}
+                        </option>
+                    </AppSelect>
+                </label>
+                <label class="block">
+                    <span class="label">Tanggal Bayar Baru *</span>
+                    <AppInput
+                        v-model="facturePaymentDateForm.payment_date"
+                        type="date"
+                        required
+                    />
+                </label>
+                <p
+                    v-if="Object.keys(facturePaymentDateForm.errors).length"
+                    class="text-sm text-red-600"
+                >
+                    {{ Object.values(facturePaymentDateForm.errors)[0] }}
+                </p>
+                <div class="flex justify-end gap-2">
+                    <AppButton
+                        variant="secondary"
+                        @click="editFacturePaymentDateOpen = false"
+                        >Batal</AppButton
+                    >
+                    <AppButton
+                        type="submit"
+                        :disabled="facturePaymentDateForm.processing"
+                        >Simpan Tanggal Bayar</AppButton
+                    >
+                </div>
+            </form>
+        </AppModal>
 
         <AppModal
             :show="dueDateOpen"

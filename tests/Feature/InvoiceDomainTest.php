@@ -14,6 +14,7 @@ use App\Models\Customer;
 use App\Models\FactureCommission;
 use App\Models\IncomingTransaction;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Supplier;
@@ -1891,6 +1892,28 @@ class InvoiceDomainTest extends TestCase
             'commission_amount' => 50000,
             'status' => 'unpaid',
         ]);
+
+        $this->put(route('combined-invoices.payment-date.update', $document), [
+            'original_payment_date' => '2026-07-17',
+            'payment_date' => '2026-07-16',
+        ])->assertRedirect(route('combined-invoices.show', $document));
+        $this->assertSame(2, Payment::query()
+            ->where('combined_invoice_document_id', $document->id)
+            ->whereDate('payment_date', '2026-07-16')
+            ->count());
+        $this->assertSame(2, CashTransaction::query()
+            ->whereIn('payment_id', $document->payments()->pluck('id'))
+            ->whereDate('transaction_date', '2026-07-16')
+            ->count());
+        $this->assertDatabaseHas('facture_commissions', [
+            'combined_invoice_document_id' => $document->id,
+            'facture_payment_date' => '2026-07-16',
+        ]);
+
+        $this->put(route('combined-invoices.payment-date.update', $document), [
+            'original_payment_date' => '2026-07-16',
+            'payment_date' => '2026-07-17',
+        ])->assertRedirect(route('combined-invoices.show', $document));
         $commission = FactureCommission::firstOrFail();
         $this->get(route('facture-commissions.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('FactureCommissions/Index')

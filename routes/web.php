@@ -66,6 +66,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('combined-invoices/{combinedInvoice}/print', [CombinedInvoiceController::class, 'print'])->name('combined-invoices.print');
     Route::get('combined-invoices/{combinedInvoice}/pdf', [CombinedInvoiceController::class, 'pdf'])->name('combined-invoices.pdf');
     Route::post('combined-invoices/{combinedInvoice}/payments', [CombinedInvoiceController::class, 'pay'])->name('combined-invoices.pay');
+    Route::put('combined-invoices/{combinedInvoice}/payment-date', [CombinedInvoiceController::class, 'updatePaymentDate'])->name('combined-invoices.payment-date.update');
     Route::put('combined-invoices/{combinedInvoice}/payments/{payment}', [CombinedInvoiceController::class, 'updatePayment'])->name('combined-invoices.payments.update');
     Route::get('facture-commissions', [FactureCommissionController::class, 'index'])->name('facture-commissions.index');
     Route::get('facture-commissions/{factureCommission}', [FactureCommissionController::class, 'show'])->name('facture-commissions.show');

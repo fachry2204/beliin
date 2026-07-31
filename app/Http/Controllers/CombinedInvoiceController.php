@@ -383,6 +383,45 @@ class CombinedInvoiceController extends Controller
             ->with('success', 'Pembayaran Faktur berhasil dikoreksi dan Cash Masuk telah disinkronkan.');
     }
 
+    public function updatePaymentDate(Request $request, CombinedInvoiceDocument $combinedInvoice)
+    {
+        $this->authorize('payments.manage');
+        $data = $request->validate([
+            'original_payment_date' => ['required', 'date'],
+            'payment_date' => ['required', 'date'],
+        ]);
+
+        $payments = $combinedInvoice->payments()
+            ->whereDate('payment_date', $data['original_payment_date'])
+            ->get();
+
+        if ($payments->isEmpty()) {
+            throw ValidationException::withMessages([
+                'original_payment_date' => 'Tanggal pembayaran Faktur yang dipilih tidak ditemukan.',
+            ]);
+        }
+
+        DB::transaction(function () use ($payments, $combinedInvoice, $data, $request) {
+            foreach ($payments as $payment) {
+                $this->payments->update($payment, [
+                    'payment_date' => $data['payment_date'],
+                    'amount' => $payment->amount,
+                    'payment_method' => $payment->payment_method,
+                    'bank_name' => $payment->bank_name,
+                    'reference_number' => $payment->reference_number,
+                    'notes' => $payment->notes,
+                ], $request->user()->id);
+            }
+
+            $combinedInvoice->commissions()
+                ->whereDate('facture_payment_date', $data['original_payment_date'])
+                ->update(['facture_payment_date' => $data['payment_date']]);
+        });
+
+        return redirect()->route('combined-invoices.show', $combinedInvoice)
+            ->with('success', 'Tanggal pembayaran Faktur dan Cash Masuk berhasil diperbarui.');
+    }
+
     private function combinedData(CombinedInvoiceDocument $document, bool $canViewProfit): array
     {
         $columns = ['invoices.id', 'invoice_number', 'purchase_order_number', 'invoice_date', 'due_date', 'grand_total', 'paid_amount', 'remaining_amount', 'status'];
