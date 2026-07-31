@@ -222,7 +222,18 @@ const money = (v: number | string) =>
         </div>
     </div>
     <div class="table-wrap">
-        <table class="data-table min-w-[1320px]">
+        <table class="data-table invoice-items-table w-full min-w-[920px] table-fixed lg:min-w-0">
+            <colgroup>
+                <col :style="{ width: canViewCost ? '18%' : '34%' }" />
+                <col v-if="canViewCost" style="width: 13%" />
+                <col :style="{ width: canViewCost ? '13%' : '20%' }" />
+                <col :style="{ width: canViewCost ? '8%' : '12%' }" />
+                <col :style="{ width: canViewCost ? '8%' : '12%' }" />
+                <col v-if="canViewCost" style="width: 12%" />
+                <col :style="{ width: canViewCost ? '12%' : '17%' }" />
+                <col v-if="canViewCost" style="width: 11%" />
+                <col style="width: 5%" />
+            </colgroup>
             <thead>
                 <tr>
                     <th>Nama Barang</th>
@@ -242,7 +253,7 @@ const money = (v: number | string) =>
                     :key="index"
                     @focusin="emit('focus-item', index)"
                 >
-                    <td class="min-w-80 align-top">
+                    <td class="min-w-0 align-top">
                         <div class="relative">
                             <input
                                 :value="item.product_name"
@@ -386,3 +397,25 @@ const money = (v: number | string) =>
         ＋ Tambah Barang
     </button>
 </template>
+
+<style scoped>
+.invoice-items-table :deep(th),
+.invoice-items-table :deep(td) {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.invoice-items-table :deep(th) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 0.65rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+    vertical-align: middle;
+}
+
+.invoice-items-table :deep(input),
+.invoice-items-table :deep(select) {
+    min-width: 0;
+}
+</style>
