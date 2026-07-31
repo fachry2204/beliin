@@ -147,15 +147,14 @@ class CombinedInvoiceController extends Controller
         $this->authorize('invoices.view');
         $canViewProfit = $request->user()->can('profit.view');
 
-        $hasFacturePayments = $combinedInvoice->payments()->exists();
         $deletionLockReason = $this->deletionLockReason($combinedInvoice);
 
         return Inertia::render('CombinedInvoices/Show', [
             ...$this->combinedData($combinedInvoice, $canViewProfit),
             'canViewProfit' => $canViewProfit,
             'canManagePayments' => $request->user()->can('payments.manage'),
-            'canEditDueDate' => $request->user()->can('invoices.create') && $combinedInvoice->status === 'open',
-            'canEdit' => $request->user()->can('invoices.create') && ! $hasFacturePayments && $combinedInvoice->status === 'open',
+            'canEditDueDate' => $request->user()->can('invoices.create'),
+            'canEdit' => $request->user()->can('invoices.create'),
             'canDelete' => $request->user()->can('invoices.delete'),
             'deletionLocked' => $deletionLockReason !== null,
             'deletionLockReason' => $deletionLockReason,
@@ -168,7 +167,6 @@ class CombinedInvoiceController extends Controller
     public function edit(CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.create');
-        $this->ensureEditable($combinedInvoice);
 
         $customer = $combinedInvoice->customer;
         $invoices = $customer->invoices()
@@ -205,7 +203,6 @@ class CombinedInvoiceController extends Controller
     public function update(Request $request, CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.create');
-        $this->ensureEditable($combinedInvoice);
         $data = $this->validateDocument($request);
         if ((int) $data['customer_id'] !== $combinedInvoice->customer_id) {
             throw ValidationException::withMessages(['customer_id' => 'Pelanggan Faktur tidak dapat diubah.']);
@@ -221,6 +218,13 @@ class CombinedInvoiceController extends Controller
             throw ValidationException::withMessages(['invoice_ids' => 'Pilihan invoice tidak valid atau sudah masuk Faktur lain.']);
         }
 
+        $paidInvoiceIds = $combinedInvoice->payments()->distinct()->pluck('invoice_id');
+        if ($paidInvoiceIds->diff($allowedIds)->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'invoice_ids' => 'Invoice yang sudah menerima pembayaran melalui Faktur ini tidak dapat dilepas.',
+            ]);
+        }
+
         DB::transaction(function () use ($combinedInvoice, $data, $allowedIds, $request) {
             $combinedInvoice->update(['due_date' => $data['use_due_date'] ? $data['due_date'] : null]);
             $combinedInvoice->invoices()->sync($allowedIds);
@@ -230,6 +234,7 @@ class CombinedInvoiceController extends Controller
                 $data['shipping_cost'] ?? 0,
                 $request->user()->id,
             );
+            $this->documents->refreshStatus($combinedInvoice->fresh());
         });
 
         return redirect()->route('combined-invoices.show', $combinedInvoice)->with('success', 'Faktur berhasil diperbarui.');
@@ -247,7 +252,6 @@ class CombinedInvoiceController extends Controller
     public function updateDueDate(Request $request, CombinedInvoiceDocument $combinedInvoice)
     {
         $this->authorize('invoices.create');
-        abort_if($combinedInvoice->status !== 'open', 422, 'Tanggal jatuh tempo Faktur yang sudah lunas tidak dapat diubah.');
         $data = $request->validate([
             'use_due_date' => ['required', 'boolean'],
             'due_date' => ['nullable', 'required_if:use_due_date,true', 'date'],
@@ -430,11 +434,6 @@ class CombinedInvoiceController extends Controller
             'courier_id' => [Rule::requiredIf((float) $request->input('shipping_cost', 0) > 0), 'nullable', 'integer', 'exists:couriers,id'],
             'shipping_cost' => ['nullable', 'numeric', 'min:0'],
         ]);
-    }
-
-    private function ensureEditable(CombinedInvoiceDocument $document): void
-    {
-        abort_if($document->status !== 'open' || $document->payments()->exists(), 422, 'Faktur yang sudah menerima pembayaran tidak dapat diedit atau dihapus.');
     }
 
     private function deletionLockReason(CombinedInvoiceDocument $document): ?string

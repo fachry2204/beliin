@@ -1964,7 +1964,7 @@ class InvoiceDomainTest extends TestCase
         $this->get(route('combined-invoices.show', $document))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('canEdit', false)
+                ->where('canEdit', true)
                 ->where('canDelete', true)
                 ->where('deletionLocked', true)
                 ->where('commissionWarningPercentage', 10));
@@ -1986,13 +1986,16 @@ class InvoiceDomainTest extends TestCase
         $this->get(route('combined-invoices.show', $document))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('canEditDueDate', false)
+                ->where('canEditDueDate', true)
                 ->where('totals.commission_total', '40000')
                 ->has('payments', 3));
         $this->put(route('combined-invoices.due-date.update', $document), [
             'use_due_date' => true,
             'due_date' => '2026-07-30',
-        ])->assertStatus(422);
+        ])->assertRedirect();
+        $this->assertSame('2026-07-30', $document->fresh()->due_date->toDateString());
+
+        $this->get(route('combined-invoices.edit', $document))->assertOk();
 
         $paymentToCorrect = $second->payments()->where('amount', 500000)->firstOrFail();
         $this->put(route('combined-invoices.payments.update', [$document, $paymentToCorrect]), [
