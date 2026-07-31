@@ -19,11 +19,19 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $this->authorize('reports.view');
-        $canViewProfit = $request->user()->can('profit.view');
 
         return Inertia::render('Reports/Home', [
-            'canViewProfit' => $canViewProfit,
-            'completeSummary' => $canViewProfit ? $this->completeSummary() : null,
+            'canViewProfit' => $request->user()->can('profit.view'),
+        ]);
+    }
+
+    public function complete(Request $request)
+    {
+        $this->authorize('reports.view');
+        abort_unless($request->user()->can('profit.view'), 403);
+
+        return Inertia::render('Reports/Complete', [
+            'summary' => $this->completeSummary(),
         ]);
     }
 

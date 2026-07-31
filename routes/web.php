@@ -88,6 +88,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('cash-out/{cashTransaction}', [CashTransactionController::class, 'destroyOutgoing'])->name('cash-out.destroy');
 
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('reports/complete', [ReportController::class, 'complete'])->name('reports.complete');
     Route::get('reports/invoices', [ReportController::class, 'invoices'])->name('reports.invoices');
     Route::get('reports/combined-invoices', [ReportController::class, 'combinedInvoices'])->name('reports.combined-invoices');
     Route::get('reports/cash', [ReportController::class, 'cash'])->name('reports.cash');
