@@ -92,6 +92,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('reports/invoices', [ReportController::class, 'invoices'])->name('reports.invoices');
     Route::get('reports/combined-invoices', [ReportController::class, 'combinedInvoices'])->name('reports.combined-invoices');
     Route::get('reports/cash', [ReportController::class, 'cash'])->name('reports.cash');
+    Route::get('reports/cash-in', [ReportController::class, 'cashIncoming'])->name('reports.cash-in');
+    Route::get('reports/cash-out', [ReportController::class, 'cashOutgoing'])->name('reports.cash-out');
+    Route::get('reports/capital', [ReportController::class, 'capital'])->name('reports.capital');
     Route::get('reports/margins', [ReportController::class, 'margins'])->name('reports.margins');
     Route::get('reports/export/{format}', [ReportController::class, 'export'])->whereIn('format', ['csv', 'xlsx', 'pdf'])->name('reports.export');
     Route::get('settings/company', [CompanySettingController::class, 'edit'])->name('company.edit');

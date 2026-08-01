@@ -9,6 +9,13 @@ use Illuminate\Validation\Rule;
 
 class CashTransactionRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'affects_margin' => $this->routeIs('cash-out.*') ? $this->boolean('affects_margin') : false,
+        ]);
+    }
+
     public function authorize(): bool
     {
         return $this->user()->can('cash.manage');
@@ -36,6 +43,7 @@ class CashTransactionRequest extends FormRequest
             'description' => 'required|max:255',
             'payment_method' => 'required|in:cash,transfer,card,qris,other',
             'amount' => 'required|numeric|gt:0|max:999999999999999999',
+            'affects_margin' => 'required|boolean',
             'reference_number' => 'nullable|max:150',
             'notes' => 'nullable|max:2000',
         ];

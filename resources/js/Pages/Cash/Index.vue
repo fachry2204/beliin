@@ -24,6 +24,7 @@ interface CashRow {
     description: string;
     payment_method: string;
     amount: string;
+    affects_margin: boolean;
     reference_number?: string;
     notes?: string;
     creator: { name: string };
@@ -63,6 +64,7 @@ const form = useForm({
     amount: "",
     reference_number: "",
     notes: "",
+    affects_margin: true,
 });
 
 watch(search, () => {
@@ -116,6 +118,7 @@ const openEdit = (row: CashRow) => {
     form.amount = row.amount;
     form.reference_number = row.reference_number ?? "";
     form.notes = row.notes ?? "";
+    form.affects_margin = row.affects_margin;
     modal.value = true;
 };
 const submit = () => {
@@ -211,6 +214,7 @@ const remove = (row: CashRow) => {
                             <th class="w-[110px]">Metode</th>
                             <th class="w-[150px] text-right">Nominal</th>
                             <th class="w-[140px]">Dibuat Oleh</th>
+                            <th v-if="!incoming" class="w-[130px]">Pengaruh Margin</th>
                             <th class="w-[100px] text-right">Aksi</th>
                         </tr>
                     </thead>
@@ -270,6 +274,11 @@ const remove = (row: CashRow) => {
                                 {{ money(row.amount) }}
                             </td>
                             <td>{{ row.creator.name }}</td>
+                            <td v-if="!incoming">
+                                <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="row.affects_margin?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600'">
+                                    {{ row.affects_margin ? "Kurangi Margin" : "Bukan Beban" }}
+                                </span>
+                            </td>
                             <td>
                                 <div
                                     v-if="
@@ -302,7 +311,7 @@ const remove = (row: CashRow) => {
                         </tr>
                         <tr v-if="!rows.data.length">
                             <td
-                                colspan="8"
+                                :colspan="incoming ? 8 : 9"
                                 class="py-12 text-center text-slate-500"
                             >
                                 Belum ada transaksi {{ title.toLowerCase() }}.
@@ -379,6 +388,10 @@ const remove = (row: CashRow) => {
                 <label class="sm:col-span-2">
                     <span class="label">Catatan</span>
                     <AppTextarea v-model="form.notes" />
+                </label>
+                <label v-if="!incoming" class="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:col-span-2">
+                    <input v-model="form.affects_margin" type="checkbox" class="mt-0.5 h-5 w-5 rounded border-amber-300 text-amber-600" />
+                    <span><strong class="block text-amber-900">Kurangi Margin Bersih</strong><small class="text-amber-700">Aktifkan hanya untuk beban usaha seperti gaji, listrik, sewa, dan operasional. Jangan aktifkan untuk pembelian aset, pengembalian modal, atau pokok utang.</small></span>
                 </label>
                 <div
                     v-if="Object.keys(form.errors).length"

@@ -21,6 +21,7 @@ class CashTransaction extends Model
         'description',
         'payment_method',
         'amount',
+        'affects_margin',
         'reference_number',
         'notes',
         'created_by',
@@ -29,7 +30,7 @@ class CashTransaction extends Model
 
     protected function casts(): array
     {
-        return ['transaction_date' => 'date:Y-m-d', 'amount' => 'decimal:2'];
+        return ['transaction_date' => 'date:Y-m-d', 'amount' => 'decimal:2', 'affects_margin' => 'boolean'];
     }
 
     public function creator()

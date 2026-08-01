@@ -109,11 +109,45 @@ class ReportController extends Controller
 
     public function cash(Request $request)
     {
+        return $this->cashReport($request);
+    }
+
+    public function cashIncoming(Request $request)
+    {
+        return $this->cashReport($request, 'in', 'Laporan Kas Masuk', 'Rincian seluruh penerimaan kas berdasarkan sumber transaksinya.');
+    }
+
+    public function cashOutgoing(Request $request)
+    {
+        return $this->cashReport($request, 'out', 'Laporan Kas Keluar', 'Rincian modal invoice, ongkir, komisi, dan pengeluaran manual.');
+    }
+
+    public function capital(Request $request)
+    {
+        $this->authorize('reports.view');
+        $query = CashTransaction::query()->where('type', 'in')->where('category', 'Setoran Modal')
+            ->when($request->date_from, fn (Builder $query, string $date) => $query->whereDate('transaction_date', '>=', $date))
+            ->when($request->date_to, fn (Builder $query, string $date) => $query->whereDate('transaction_date', '<=', $date))
+            ->when($request->search, fn (Builder $query, string $search) => $query->where(fn (Builder $query) => $query
+                ->where('transaction_number', 'like', "%{$search}%")->orWhere('description', 'like', "%{$search}%")->orWhere('reference_number', 'like', "%{$search}%")));
+        $capitalTotal = (float) (clone $query)->sum('amount');
+        $invoiceCostTotal = (float) CashTransaction::query()->whereNotNull('invoice_cost_id')->sum('amount');
+        $capitalReturned = (float) CashTransaction::query()->where('type', 'out')->whereIn('category', ['Pengembalian Modal', 'Prive Pemilik', 'Prive'])->sum('amount');
+
+        return Inertia::render('Reports/Capital', [
+            'summary' => ['capital_total' => (string) $capitalTotal, 'invoice_cost_total' => (string) $invoiceCostTotal, 'capital_returned' => (string) $capitalReturned, 'available_capital' => (string) ($capitalTotal - $invoiceCostTotal - $capitalReturned)],
+            'rows' => $query->latest('transaction_date')->latest('id')->paginate(15)->withQueryString(),
+            'filters' => $this->filters($request),
+        ]);
+    }
+
+    private function cashReport(Request $request, ?string $forcedType = null, string $title = 'Laporan Kas', string $description = 'Arus Kas Masuk dan Kas Keluar dalam satu laporan.')
+    {
         $this->authorize('reports.view');
         $query = CashTransaction::query()
             ->when($request->date_from, fn (Builder $query, string $date) => $query->whereDate('transaction_date', '>=', $date))
             ->when($request->date_to, fn (Builder $query, string $date) => $query->whereDate('transaction_date', '<=', $date))
-            ->when($request->type, fn (Builder $query, string $type) => $query->where('type', $type))
+            ->when($forcedType ?: $request->type, fn (Builder $query, string $type) => $query->where('type', $type))
             ->when($request->search, fn (Builder $query, string $search) => $query->where(fn (Builder $query) => $query
                 ->where('transaction_number', 'like', "%{$search}%")
                 ->orWhere('category', 'like', "%{$search}%")
@@ -129,6 +163,9 @@ class ReportController extends Controller
             'summary' => $summary,
             'rows' => $rows,
             'filters' => $this->filters($request, ['type']),
+            'reportTitle' => $title,
+            'reportDescription' => $description,
+            'forcedType' => $forcedType,
         ]);
     }
 
@@ -152,6 +189,11 @@ class ReportController extends Controller
         $grossMarginTotal = (float) $invoiceTotals->gross_margin_total;
         $factureShippingTotal = (float) (clone $query)->sum('shipping_cost');
         $shippingTotal = (float) $invoiceTotals->shipping_total + $factureShippingTotal;
+        $manualExpenseTotal = (float) CashTransaction::query()
+            ->where('type', 'out')->where('affects_margin', true)
+            ->when($request->date_from, fn (Builder $query, string $date) => $query->whereDate('transaction_date', '>=', $date))
+            ->when($request->date_to, fn (Builder $query, string $date) => $query->whereDate('transaction_date', '<=', $date))
+            ->sum('amount');
         $summary = [
             'facture_count' => $documentIds->count(),
             'invoice_count' => (int) $invoiceTotals->invoice_count,
@@ -160,7 +202,8 @@ class ReportController extends Controller
             'gross_margin_total' => (string) $grossMarginTotal,
             'commission_total' => (string) $commissionTotal,
             'shipping_total' => (string) $shippingTotal,
-            'net_margin_total' => (string) ($grossMarginTotal - $commissionTotal - $shippingTotal),
+            'manual_expense_total' => (string) $manualExpenseTotal,
+            'net_margin_total' => (string) ($grossMarginTotal - $commissionTotal - $shippingTotal - $manualExpenseTotal),
         ];
         $rows = $query
             ->with('customer:id,name,company_name')
@@ -289,16 +332,27 @@ class ReportController extends Controller
             ->whereNull('combined_invoice_document_id')
             ->whereDoesntHave('factureCommission')
             ->sum('amount');
+        $manualExpenseTotal = (float) CashTransaction::query()->where('type', 'out')->where('affects_margin', true)->sum('amount');
+        $capitalTotal = (float) CashTransaction::query()->where('type', 'in')->where('category', 'Setoran Modal')->sum('amount');
+        $invoiceCostTotal = (float) CashTransaction::query()->whereNotNull('invoice_cost_id')->sum('amount');
+        $cashInTotal = (float) CashTransaction::query()->where('type', 'in')->sum('amount');
+        $cashOutTotal = (float) CashTransaction::query()->where('type', 'out')->sum('amount');
         $paidMarginTotal = (float) $paidInvoiceTotals->margin_total;
 
         return [
             'shipping_total' => (string) $shippingTotal,
             'commission_total' => (string) $commissionTotal,
             'manual_cash_out_total' => (string) $manualCashOutTotal,
+            'manual_expense_total' => (string) $manualExpenseTotal,
+            'capital_total' => (string) $capitalTotal,
+            'invoice_cost_total' => (string) $invoiceCostTotal,
+            'cash_in_total' => (string) $cashInTotal,
+            'cash_out_total' => (string) $cashOutTotal,
+            'cash_balance' => (string) ($cashInTotal - $cashOutTotal),
             'paid_facture_total' => (string) $paidInvoiceTotals->facture_total,
             'unpaid_facture_total' => (string) $unpaidFactureTotal,
             'paid_margin_total' => (string) $paidMarginTotal,
-            'net_margin_total' => (string) ($paidMarginTotal - $shippingTotal - $manualCashOutTotal - $commissionTotal),
+            'net_margin_total' => (string) ($paidMarginTotal - $shippingTotal - $manualExpenseTotal - $commissionTotal),
         ];
     }
 

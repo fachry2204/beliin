@@ -34,6 +34,7 @@ interface Summary {
     gross_margin_total: string;
     commission_total: string;
     shipping_total: string;
+    manual_expense_total: string;
     net_margin_total: string;
 }
 defineProps<{
@@ -102,6 +103,7 @@ const date = (v: string) =>
                 tone="emerald"
                 icon="margin"
             />
+            <ReportStatCard label="Beban Operasional Manual" :value="money(summary.manual_expense_total)" tone="amber" icon="cash" />
         </div>
         <section class="panel">
             <div class="table-wrap">

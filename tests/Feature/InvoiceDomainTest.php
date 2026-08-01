@@ -282,6 +282,7 @@ class InvoiceDomainTest extends TestCase
             'description' => 'Kas keluar pengujian laporan',
             'payment_method' => 'transfer',
             'amount' => 125000,
+            'affects_margin' => true,
             'reference_number' => 'REPORT-OUT',
         ], $this->admin->id);
 
@@ -412,6 +413,7 @@ class InvoiceDomainTest extends TestCase
                 ->where('summary.gross_margin_total', '250000')
                 ->where('summary.commission_total', '25000')
                 ->where('summary.shipping_total', '50000')
+                ->where('summary.manual_expense_total', '0')
                 ->where('summary.net_margin_total', '175000'));
 
         $this->get(route('reports.complete'))
@@ -421,10 +423,18 @@ class InvoiceDomainTest extends TestCase
                 ->where('summary.shipping_total', '50000')
                 ->where('summary.commission_total', '25000')
                 ->where('summary.manual_cash_out_total', '125000')
+                ->where('summary.manual_expense_total', '125000')
                 ->where('summary.paid_facture_total', '1000000')
                 ->where('summary.unpaid_facture_total', '0')
                 ->where('summary.paid_margin_total', '250000')
                 ->where('summary.net_margin_total', '50000'));
+
+        $this->get(route('reports.cash-in'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Reports/Cash')->where('forcedType', 'in'));
+        $this->get(route('reports.cash-out'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Reports/Cash')->where('forcedType', 'out'));
+        $this->get(route('reports.capital'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Reports/Capital')->has('summary.capital_total'));
 
         $limitedUser = User::factory()->create(['email_verified_at' => now(), 'is_active' => true]);
         $limitedUser->givePermissionTo('reports.view');

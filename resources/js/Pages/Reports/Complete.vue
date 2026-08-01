@@ -8,6 +8,12 @@ interface Summary {
     shipping_total: string;
     commission_total: string;
     manual_cash_out_total: string;
+    manual_expense_total: string;
+    capital_total: string;
+    invoice_cost_total: string;
+    cash_in_total: string;
+    cash_out_total: string;
+    cash_balance: string;
     paid_facture_total: string;
     unpaid_facture_total: string;
     paid_margin_total: string;
@@ -25,22 +31,28 @@ const money = (value: string | number) =>
 </script>
 
 <template>
-    <Head title="Laporan Lengkap" />
+    <Head title="Ringkasan Keuangan" />
     <AuthenticatedLayout>
-        <template #breadcrumb>Laporan / Laporan Lengkap</template>
+        <template #breadcrumb>Laporan / Ringkasan Keuangan</template>
         <div class="mb-6 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div>
-                <h1 class="page-title">Laporan Lengkap</h1>
-                <p class="page-subtitle">Ringkasan keseluruhan faktur, biaya, komisi, dan margin bersih.</p>
+                <h1 class="page-title">Ringkasan Keuangan</h1>
+                <p class="page-subtitle">Posisi kas, modal, faktur, biaya, dan margin usaha secara menyeluruh.</p>
             </div>
             <Link :href="route('reports.index')"><AppButton variant="secondary">Kembali</AppButton></Link>
         </div>
 
         <section class="panel overflow-hidden">
             <div class="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                <ReportStatCard label="Saldo Kas Utama" :value="money(summary.cash_balance)" tone="emerald" icon="cash" />
+                <ReportStatCard label="Total Kas Masuk" :value="money(summary.cash_in_total)" tone="emerald" icon="cash" />
+                <ReportStatCard label="Total Kas Keluar" :value="money(summary.cash_out_total)" tone="amber" icon="cash" />
+                <ReportStatCard label="Total Setoran Modal" :value="money(summary.capital_total)" tone="sky" icon="cash" />
+                <ReportStatCard label="Modal Invoice Terpakai" :value="money(summary.invoice_cost_total)" tone="amber" icon="invoice" />
                 <ReportStatCard label="Total Ongkir" :value="money(summary.shipping_total)" tone="amber" icon="cash" />
                 <ReportStatCard label="Total Komisi" :value="money(summary.commission_total)" tone="amber" icon="cash" />
                 <ReportStatCard label="Total Kas Keluar Manual" :value="money(summary.manual_cash_out_total)" tone="amber" icon="cash" />
+                <ReportStatCard label="Beban Manual Pengurang Margin" :value="money(summary.manual_expense_total)" tone="amber" icon="cash" />
                 <ReportStatCard label="Total Faktur Sudah Dibayar" :value="money(summary.paid_facture_total)" tone="emerald" icon="combined" />
                 <ReportStatCard label="Total Faktur Belum Dibayar" :value="money(summary.unpaid_facture_total)" tone="sky" icon="combined" />
                 <ReportStatCard label="Margin Faktur Terbayar" :value="money(summary.paid_margin_total)" tone="violet" icon="margin" />
