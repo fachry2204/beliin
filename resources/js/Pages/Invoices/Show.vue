@@ -636,9 +636,9 @@ const remove = () => {
             <form class="space-y-5" @submit.prevent="submitShipping">
                 <div class="grid gap-4 sm:grid-cols-2">
                     <label class="block">
-                        <span class="label">Kurir *</span>
-                        <AppSelect v-model="shippingForm.courier_id" required>
-                            <option value="">Pilih kurir</option>
+                        <span class="label">Kurir</span>
+                        <AppSelect v-model="shippingForm.courier_id">
+                            <option value="">Tanpa Kurir</option>
                             <option v-for="courier in couriers" :key="courier.id" :value="String(courier.id)">
                                 {{ courier.name }}
                                 {{ courier.vehicle_type ? `- ${courier.vehicle_type}` : "" }}
@@ -646,13 +646,14 @@ const remove = () => {
                                 {{ !courier.is_active || courier.deleted_at ? "(Nonaktif)" : "" }}
                             </option>
                         </AppSelect>
+                        <small class="mt-1 block text-slate-500">Tanpa Kurir hanya dapat dipilih jika ongkos kirim Rp 0.</small>
                     </label>
                     <label class="block">
                         <span class="label">Ongkos Kirim *</span>
                         <CurrencyInput v-model="shippingForm.shipping_cost" placeholder="0" />
                     </label>
                 </div>
-                <label v-if="status() !== 'draft'" class="block">
+                <label v-if="status() !== 'draft' && shippingForm.courier_id" class="block">
                     <span class="label">Status Pengiriman *</span>
                     <AppSelect v-model="shippingForm.delivery_status" required>
                         <option value="pending">Tugas Belum Diambil</option>

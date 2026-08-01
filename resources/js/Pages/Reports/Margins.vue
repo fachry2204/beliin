@@ -96,14 +96,15 @@ const date = (v: string) =>
                 :value="money(summary.shipping_total)"
                 tone="amber"
                 icon="cash"
-            /><ReportStatCard
+            />
+            <ReportStatCard label="Beban Operasional Manual" :value="money(summary.manual_expense_total)" tone="amber" icon="cash" />
+            <ReportStatCard
                 label="Total Margin Bersih"
                 :value="money(summary.net_margin_total)"
                 :detail="rate(summary.net_margin_total, summary.sales_total)"
                 tone="emerald"
                 icon="margin"
             />
-            <ReportStatCard label="Beban Operasional Manual" :value="money(summary.manual_expense_total)" tone="amber" icon="cash" />
         </div>
         <section class="panel">
             <div class="table-wrap">

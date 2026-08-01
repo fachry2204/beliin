@@ -142,7 +142,7 @@ class InvoiceController extends Controller
     {
         $this->authorize('issue', $invoice);
         $data = $request->validate([
-            'courier_id' => ['required', 'exists:couriers,id'],
+            'courier_id' => [Rule::requiredIf((float) $request->input('shipping_cost', 0) > 0), 'nullable', 'exists:couriers,id'],
             'shipping_cost' => ['required', 'numeric', 'min:0'],
             'shipping_paid_now' => ['required', 'boolean'],
         ]);
@@ -150,7 +150,7 @@ class InvoiceController extends Controller
             $invoice,
             $request->user()->id,
             (bool) $data['shipping_paid_now'],
-            (int) $data['courier_id'],
+            filled($data['courier_id'] ?? null) ? (int) $data['courier_id'] : null,
             $data['shipping_cost'],
         );
 
@@ -161,7 +161,7 @@ class InvoiceController extends Controller
     {
         $this->authorize('update', $invoice);
         $data = $request->validate([
-            'courier_id' => ['required', 'exists:couriers,id'],
+            'courier_id' => [Rule::requiredIf((float) $request->input('shipping_cost', 0) > 0), 'nullable', 'exists:couriers,id'],
             'shipping_cost' => ['required', 'numeric', 'min:0'],
             'shipping_paid_now' => ['required', 'boolean'],
             'delivery_status' => ['nullable', Rule::in([
@@ -176,7 +176,7 @@ class InvoiceController extends Controller
         $this->service->updateShipping(
             $invoice,
             $request->user()->id,
-            (int) $data['courier_id'],
+            filled($data['courier_id'] ?? null) ? (int) $data['courier_id'] : null,
             $data['shipping_cost'],
             (bool) $data['shipping_paid_now'],
             $data['delivery_status'] ?? null,

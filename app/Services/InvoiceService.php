@@ -154,23 +154,26 @@ class InvoiceService
         });
     }
 
-    public function updateShipping(Invoice $invoice, int $userId, int $courierId, mixed $shippingCost, bool $shippingPaidNow, ?string $deliveryStatus = null): Invoice
+    public function updateShipping(Invoice $invoice, int $userId, ?int $courierId, mixed $shippingCost, bool $shippingPaidNow, ?string $deliveryStatus = null): Invoice
     {
         return DB::transaction(function () use ($invoice, $userId, $courierId, $shippingCost, $shippingPaidNow, $deliveryStatus) {
             $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
             abort_if($invoice->status === InvoiceStatus::Draft, 422, 'Invoice draft menggunakan pengaturan pengiriman saat diterbitkan.');
             abort_if($invoice->status === InvoiceStatus::Cancelled, 422, 'Pengiriman invoice yang dibatalkan tidak dapat diubah.');
 
-            $courier = Courier::withTrashed()
+            if ((float) $shippingCost > 0 && ! $courierId) {
+                throw ValidationException::withMessages(['courier_id' => 'Pilih kurir atau ubah ongkos kirim menjadi Rp 0.']);
+            }
+            $courier = $courierId ? Courier::withTrashed()
                 ->whereKey($courierId)
                 ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $invoice->courier_id))
-                ->firstOrFail();
+                ->firstOrFail() : null;
             $old = $invoice->load(['shippingDeposit', 'delivery'])->toArray();
             $previousCourierId = $invoice->courier_id;
 
             $invoice->update([
-                'courier_id' => $courier->id,
-                'courier_name' => $courier->name,
+                'courier_id' => $courier?->id,
+                'courier_name' => $courier?->name,
                 'shipping_cost' => $shippingCost,
             ]);
 
@@ -182,7 +185,7 @@ class InvoiceService
             $this->audit->record('update_shipping', 'invoice', $invoice, $old, $invoice->fresh(['shippingDeposit', 'delivery'])->toArray());
             Cache::forget('dashboard.metrics');
 
-            if ($delivery && $previousCourierId !== $courier->id) {
+            if ($delivery && $previousCourierId !== $courier?->id) {
                 DB::afterCommit(fn () => $this->courierPush->sendNewTask($delivery));
             }
 
@@ -305,6 +308,9 @@ class InvoiceService
     private function syncCourierDelivery(Invoice $invoice, ?string $requestedStatus = null): ?CourierDelivery
     {
         if (! $invoice->courier_id) {
+            if ($invoice->delivery()->where('status', '!=', CourierDelivery::PENDING)->exists()) {
+                throw ValidationException::withMessages(['courier_id' => 'Kurir tidak dapat dihapus setelah tugas pengiriman diambil.']);
+            }
             $invoice->delivery()->where('status', CourierDelivery::PENDING)->delete();
 
             return null;

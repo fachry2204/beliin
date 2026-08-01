@@ -14,8 +14,7 @@ interface ReportCard {
 const cards: ReportCard[] = [
     { title: "Laporan Invoice", description: "Pantau seluruh invoice, pembayaran, sisa tagihan, dan statusnya.", route: "reports.invoices", type: "invoice", tone: "sky" },
     { title: "Laporan Faktur & Piutang", description: "Pantau faktur gabungan, pembayaran pelanggan, sisa piutang, dan jatuh tempo.", route: "reports.combined-invoices", type: "combined", tone: "emerald" },
-    { title: "Laporan Kas Masuk", description: "Rincian pembayaran pelanggan, setoran modal, dan penerimaan kas lainnya.", route: "reports.cash-in", type: "cash", tone: "emerald" },
-    { title: "Laporan Kas Keluar", description: "Rincian modal invoice, ongkir, komisi, dan pengeluaran manual.", route: "reports.cash-out", type: "cash", tone: "amber" },
+    { title: "Laporan Kas Masuk & Keluar", description: "Pantau seluruh penerimaan dan pengeluaran kas dalam satu laporan dengan filter jenis transaksi.", route: "reports.cash", type: "cash", tone: "amber" },
     { title: "Laporan Setoran & Penggunaan Modal", description: "Pantau setoran pemilik, modal invoice terpakai, dan sisa dana modal operasional.", route: "reports.capital", type: "cash", tone: "sky" },
     { title: "Laporan Margin & Laba", description: "Ukur margin kotor dan laba bersih dari Faktur yang sudah dibayar lunas.", route: "reports.margins", type: "margin", tone: "violet", profitOnly: true },
     { title: "Ringkasan Keuangan", description: "Lihat posisi kas, modal, faktur, biaya, dan margin usaha secara menyeluruh.", route: "reports.complete", type: "margin", tone: "violet", profitOnly: true },

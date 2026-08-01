@@ -434,7 +434,9 @@ class InvoiceDomainTest extends TestCase
         $this->get(route('reports.cash-out'))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('Reports/Cash')->where('forcedType', 'out'));
         $this->get(route('reports.capital'))->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->component('Reports/Capital')->has('summary.capital_total'));
+            ->component('Reports/Capital')
+            ->has('summary.capital_total')
+            ->has('summary.recovered_invoice_cost_total'));
 
         $limitedUser = User::factory()->create(['email_verified_at' => now(), 'is_active' => true]);
         $limitedUser->givePermissionTo('reports.view');

@@ -132,10 +132,20 @@ class ReportController extends Controller
                 ->where('transaction_number', 'like', "%{$search}%")->orWhere('description', 'like', "%{$search}%")->orWhere('reference_number', 'like', "%{$search}%")));
         $capitalTotal = (float) (clone $query)->sum('amount');
         $invoiceCostTotal = (float) CashTransaction::query()->whereNotNull('invoice_cost_id')->sum('amount');
+        $recoveredInvoiceCostTotal = (float) CashTransaction::query()
+            ->whereNotNull('invoice_cost_id')
+            ->whereHas('costInvoice', fn (Builder $query) => $query->where('status', InvoiceStatus::Paid))
+            ->sum('amount');
         $capitalReturned = (float) CashTransaction::query()->where('type', 'out')->whereIn('category', ['Pengembalian Modal', 'Prive Pemilik', 'Prive'])->sum('amount');
 
         return Inertia::render('Reports/Capital', [
-            'summary' => ['capital_total' => (string) $capitalTotal, 'invoice_cost_total' => (string) $invoiceCostTotal, 'capital_returned' => (string) $capitalReturned, 'available_capital' => (string) ($capitalTotal - $invoiceCostTotal - $capitalReturned)],
+            'summary' => [
+                'capital_total' => (string) $capitalTotal,
+                'invoice_cost_total' => (string) $invoiceCostTotal,
+                'recovered_invoice_cost_total' => (string) $recoveredInvoiceCostTotal,
+                'capital_returned' => (string) $capitalReturned,
+                'available_capital' => (string) ($capitalTotal - $invoiceCostTotal + $recoveredInvoiceCostTotal - $capitalReturned),
+            ],
             'rows' => $query->latest('transaction_date')->latest('id')->paginate(15)->withQueryString(),
             'filters' => $this->filters($request),
         ]);
